@@ -3,7 +3,7 @@
  * Payload UART link between the Raspberry Pi Zero 2W (payload computer)
  * and the T-Beam S3 (ESP32-S3 radio modem). Authoritative definition —
  * the ESP32-S3 firmware includes this header; the Pi-side Python in
- * python-scripts/node_payload/ mirrors these constants. Do not duplicate
+ * The camera payload's node_payload/link.py mirrors these constants. Do not duplicate
  * in C. Design: protocols/specs/payload-uart-link.md (ADR 0008).
  *
  * Framing on the wire: COBS-encoded, 0x00-delimited. Inside each frame:

@@ -3,7 +3,7 @@
  * A TDMA satellite (ADR 0027/0028). Core 0: PPS ISR (if routed) + GPS time
  * discipline + TDMA slot timing + radio TX — hard real-time. Core 1: the
  * external sensor kit (PMS7003, SCD30, BME688) + frame packing — slow,
- * blocking I/O that must never touch Core 0 (tenet 2, CLAUDE.md).
+ * blocking I/O that must never touch Core 0 (architecture tenet 2).
  *
  * See firmware/tbeam/README.md for the full task/priority table and why
  * this is a separate app from the receiver rather than a role flag.

@@ -188,7 +188,7 @@ static void echo_nmea_and_count_pps(void) {
 
 /* Bench / range link test: sixty tagged frames, one per second, at the
  * configured TX power (CONFIG_SWARM_TX_POWER_DBM: +2 dBm lab floor, +8 dBm
- * Madrid field profile — ADR 0031). The receiver prints each as
+ * EU field profile — ADR 0031). The receiver prints each as
  * `RX <rssi> <snr> <hex>`; the hex starts with a5 5a 4c 4e 4b ("LNK") then
  * the sequence number and this chip's MAC tail, so the two consoles can be
  * matched frame by frame. Sixty, not ten: 0 lost of 10 only bounds the loss

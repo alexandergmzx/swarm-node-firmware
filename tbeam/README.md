@@ -1,6 +1,6 @@
 # `firmware/tbeam/` — the prototype fleet's firmware
 
-ESP-IDF v5.4.1 ([ADR 0028](../../docs/adr/0028-esp-idf-for-the-prototype.md); confirmed working on
+ESP-IDF v5.4.1 (ADR 0028; confirmed working on
 the development machine — a newer v6.0.2 install exists but needs its Python environment repaired
 before it is usable, and nothing here requires v6 specifically). Replaces the empty Zephyr
 scaffolding that used to live at `firmware/tbeam-s3/`; Zephyr and an all-Supreme fleet return with
@@ -12,9 +12,9 @@ A satellite and the receiver are different programs, not one program with a Kcon
 satellite is a hard-real-time TDMA transmitter: GPS/NMEA time discipline to find its ~5 ms window
 every 5 s, a full Core 1 acquisition pipeline (PMS7003, SCD30, BME688), then a precisely-timed
 radio TX on Core 0 — roughly eight tasks across two priority tiers. The receiver (`node_id` 0)
-never transmits ([ADR 0016](../../docs/adr/0016-tdma-slot-allocation-prototype.md)'s slot 0 stays
+never transmits (ADR 0016's slot 0 stays
 silent) and carries no live sensor pipeline this phase
-([ADR 0027](../../docs/adr/0027-prototype-fleet-external-sensor-kit.md): its kit is fitted but
+(ADR 0027: its kit is fitted but
 idle) — its entire job is continuous-RX radio → one USB tether line per frame, plus one `FIX` line
 per superframe saying where it is. No slot to hit, no TDMA state machine; it opens the GNSS UART
 for position only (see "The receiver's `FIX` line" below). Forcing that gap into one `main.c` would
@@ -41,7 +41,7 @@ firmware/tbeam/
 headers are included, never copied, honouring `firmware/shared/README.md`'s rule that directory
 stays dependency-free C99. `SWARM_NODE_ID` (per-unit provisioning, default 15 = unprovisioned — the
 TDMA task refuses to transmit at 15, mechanically enforcing
-[`protocols/specs/messages.md`](../../protocols/specs/messages.md)) is a satellite-only Kconfig
+`protocols/specs/messages.md`) is a satellite-only Kconfig
 knob set per unit through the overlays in `apps/satellite/nodes/` (see "Provisioning a satellite"
 below); the receiver's `node_id` is hard-coded 0.
 
@@ -94,7 +94,7 @@ idf.py -B build-esp32 -DSDKCONFIG=$PWD/build-esp32/sdkconfig -DSDKCONFIG_DEFAULT
 
 | Library | Pinned at | Why this pin |
 |---|---|---|
-| [RadioLib](https://github.com/jgromes/RadioLib) | commit `187ef2479` (past the `7.7.1` tag) | The tagged release's bundled ESP-IDF HAL example is ESP32-classic-only (raw-register SPI, `#error`s on other targets). The portable, `driver/spi_master.h`-based HAL — tested in RadioLib's own CI across esp32/esp32s3/esp32c3 — was promoted to a first-party library HAL (`src/hal/ESP-IDF/`, auto-included from `#include <RadioLib.h>` on ESP-IDF builds) on 2026-06-12 and hardened through 2026-07-03, after the last tag. A SHA pin past an unreleased fix is a normal call, not a moving target — "no version moves mid-phase" ([ADR 0028](../../docs/adr/0028-esp-idf-for-the-prototype.md)) still applies from here. |
+| [RadioLib](https://github.com/jgromes/RadioLib) | commit `187ef2479` (past the `7.7.1` tag) | The tagged release's bundled ESP-IDF HAL example is ESP32-classic-only (raw-register SPI, `#error`s on other targets). The portable, `driver/spi_master.h`-based HAL — tested in RadioLib's own CI across esp32/esp32s3/esp32c3 — was promoted to a first-party library HAL (`src/hal/ESP-IDF/`, auto-included from `#include <RadioLib.h>` on ESP-IDF builds) on 2026-06-12 and hardened through 2026-07-03, after the last tag. A SHA pin past an unreleased fix is a normal call, not a moving target — "no version moves mid-phase" (ADR 0028) still applies from here. |
 | [XPowersLib](https://github.com/lewisxhe/XPowersLib) | `v0.3.3` | One PMU driver for the whole fleet: every board — both classics (bench-identified 2026-09-03) and the S3 Supreme — carries an **AXP2101**; the component's AXP192 support stays as a zero-cost guard against a misidentified or replacement unit. Wrapped by `components/pmu` (`swarm_pmu_init()`), which enables the ALDO rails the radio and the GNSS hang from — off at power-up on every board — before anything else touches them. |
 | [BME68x_SensorAPI](https://github.com/boschsensortec/BME68x_SensorAPI) | `v4.4.8` | Bosch's own reference driver (`components/bme68x` wraps it — plain vendor C, no build system of its own). |
 
@@ -127,9 +127,9 @@ wiring; both are closed in the tree now.
    pins (`SWARM_PIN_PMU_SDA/SCL/IRQ`), `SWARM_PMU_SHARES_SENSOR_BUS`, and `SWARM_I2C_ADDR_OLED`.
    The M0 sketches `radio_probe` and `gps_probe` do the same two rail writes through XPowersLib's
    Arduino API before touching the radio or the UART; `pmu_probe` stays read-only.
-2. **Band.** The interop profile is **433.175 MHz** at **+2 dBm indoors** ([ADR 0031](../../docs/adr/0031-433-mhz-lab-band.md)):
+2. **Band.** The interop profile is **433.175 MHz** at **+2 dBm indoors** (ADR 0031):
    `components/radio/lora_radio.cpp` `kFreqMHz`, TX power from `CONFIG_SWARM_TX_POWER_DBM`
-   (`components/radio/Kconfig`, range 2–10, default 2; the Madrid field profile of the ADR 0031
+   (`components/radio/Kconfig`, range 2–10, default 2; the EU field profile of the ADR 0031
    amendment builds with 8 — `idf.py menuconfig` → "Swarm radio profile", or a line in the app's
    `sdkconfig.defaults`), the `SX1278` RadioLib class on
    the esp32 target (probed first; SX1262 stays as a guard, and the order flips on esp32s3), and
@@ -137,13 +137,13 @@ wiring; both are closed in the tree now.
    525 MHz, which is what made the old 915 MHz sketch a guaranteed false negative.
 
 The electrical confirmation per unit is done (2026-09-03, all three boards, plus 10/10 link tests
-from each classic to the receiver) — [`hardware/bringup-log.md`](../../hardware/bringup-log.md);
-the runbook that produced it is in [`tools/bringup/README.md`](../../tools/bringup/README.md).
+from each classic to the receiver) — `hardware/bringup-log.md`;
+the runbook that produced it is in `tools/bringup/README.md`.
 
 ## Task / core map (`apps/satellite`)
 
-FreeRTOS SMP replaces Zephyr's AMP image split ([ADR 0028](../../docs/adr/0028-esp-idf-for-the-prototype.md)
-decision 3) — one kernel, real `xTaskCreatePinnedToCore` affinity. Tenet 1/2 (CLAUDE.md) hold: the
+FreeRTOS SMP replaces Zephyr's AMP image split (ADR 0028
+decision 3) — one kernel, real `xTaskCreatePinnedToCore` affinity. Architecture tenets 1 and 2 (hard real-time on Core 0; blocking sensor I/O on Core 1) hold: the
 isolation boundary is core affinity plus priority inside one kernel, not separate images bridged by
 IPC.
 
@@ -158,7 +158,7 @@ IPC.
 | `bme688` | 1 | 5 | I2C forced-mode reads (T/RH/P + gas), overlays `shared_state`, feeds the SCD30's pressure compensation directly (same bus, no `CALIBRATION_EVENT` round trip) |
 
 `shared_state.c` is the Core 1 → Core 0 hand-off `sensor_bundle_t` has been since
-[ADR 0023](../../docs/adr/0023-tbeam-only-node.md) item 4: acquisition tasks write their own
+ADR 0023 item 4: acquisition tasks write their own
 fields under a critical section; `tdma_task` snapshots once per superframe, applying the staleness
 rule from `protocols/specs/messages.md` (a sensor whose setter has not fired in > 6 s has its VALID
 bit cleared — validity bits are only ever cleared here, never set).
@@ -182,7 +182,7 @@ FIX <lat> <lon> <epoch_s> <fix> <disc> <err_ms>
 ```
 
 (`FIX 0.0000000 0.0000000 0 0 0 0` until the first fix; grammar and field table in
-[`protocols/specs/messages.md`](../../protocols/specs/messages.md)). It is printed from the same
+`protocols/specs/messages.md`). It is printed from the same
 task as the `RX` lines, so the two can never interleave, which is also why the RX poll now times
 out every 1000 ms instead of blocking forever: the cadence has to hold through radio silence.
 Node 0 still never transmits — the estimate's time half is printed as a clock-quality readout,
@@ -193,7 +193,7 @@ tether's existing rule.
 
 Bus addresses are identical on both variants: PMU `0x34`, SCD30 `0x61`, BME688 `0x76` (the S3's
 onboard BME280 owns `0x77` on the same class of bus, per
-[ADR 0014](../../docs/adr/0014-tbeam-onboard-sensor-suite.md), so the external part is strapped to
+ADR 0014, so the external part is strapped to
 `0x76` fleet-wide). Pin numbers are per-variant; the machine-readable source of truth is
 [`components/board/include/board_pins.h`](components/board/include/board_pins.h), which this table
 mirrors.
@@ -205,17 +205,17 @@ mirrors.
 | LoRa SCK / MISO / MOSI / CS / RST | IO12 / IO13 / IO11 / IO10 / IO5 |
 | LoRa DIO1 / BUSY (SX1262 — no DIO0 on this chip) | IO1 / IO4 |
 | I2C SDA / SCL | IO17 / IO18 |
-| GPS UART RX / TX / PPS | IO9 / IO8 / IO6 (do not reuse — [ADR 0023](../../docs/adr/0023-tbeam-only-node.md)) |
+| GPS UART RX / TX / PPS | IO9 / IO8 / IO6 (do not reuse — ADR 0023) |
 | PMS7003 RX / TX / `SET` | IO39 / IO38 / IO2 |
 
 ### Classic T-Beam (satellite) — confirmed on the bench (2026-09-03)
 
 Authoritative reference: the vendor V1.2 schematic and its notes file,
-[`docs/datasheets/lilygo/t-beam-classic/`](../../docs/datasheets/lilygo/t-beam-classic/) — both
+`docs/datasheets/lilygo/t-beam-classic/` — both
 bench units are that one design (title block "T22_GPS_V1.1 replaced with AXP2101"). Identity:
 PMU **AXP2101**, GPS **NEO-6M**, radio **SX1278** (HPDTek HPD14A module, 433 MHz), OLED **SSD1306
 `0x3C`** on both. Confirmed electrically on both units on 2026-09-03, including a 10/10 link test to the receiver
-([`hardware/bringup-log.md`](../../hardware/bringup-log.md)); `board_pins.h` carries the confirmed values.
+(`hardware/bringup-log.md`); `board_pins.h` carries the confirmed values.
 
 | Signal | Pin |
 |---|---|
@@ -230,20 +230,20 @@ PMU **AXP2101**, GPS **NEO-6M**, radio **SX1278** (HPDTek HPD14A module, 433 MHz
 **The LoRa RST dispute is closed.** Meshtastic's `variant.h` (GPIO 23) matched the vendor
 schematic; RadioLib's upstream ESP-IDF example (GPIO 14) did not. GPIO 14 is therefore free — the
 one candidate for a PPS bodge wire from the module side of R34, should PPS discipline ever be
-wanted on a classic ([ADR 0027](../../docs/adr/0027-prototype-fleet-external-sensor-kit.md) second
+wanted on a classic (ADR 0027 second
 bring-up note).
 
 ## Interop profile (`components/radio`)
 
 Every node on the mesh must agree on all seven parameters — this is the one place they are named
-as code, mirroring [ADR 0016](../../docs/adr/0016-tdma-slot-allocation-prototype.md) /
-[ADR 0029](../../docs/adr/0029-raw-sensor-gas-channel.md):
+as code, mirroring ADR 0016 /
+ADR 0029:
 
-**433.175 MHz** ([ADR 0031](../../docs/adr/0031-433-mhz-lab-band.md) — every board on hand is a
+**433.175 MHz** (ADR 0031 — every board on hand is a
 433 MHz variant) · 125 kHz · SF7 · CR 4:5 ·
 explicit header · PHY CRC on · 8-symbol preamble · private sync word `0x12` · **TX power from
 `CONFIG_SWARM_TX_POWER_DBM`** — 2 dBm indoors (the minimum shared by both parts; 433 MHz is not a
-free-use band in Mexico, so lab tests there are indoor only) and 8 dBm for the Madrid field profile
+free-use band in Mexico, so lab tests there are indoor only) and 8 dBm for the EU field profile
 (≤ 10 mW e.r.p. with the stock whip — ADR 0031 amendment, 2026-09-05); the Kconfig range stops at
 10 so no build exceeds the EU cap. The other six are constants: the mesh must agree on them. On
 the SX1262 side (the S3), `DIO2`-as-RF-switch and 1.8 V TCXO match the glue LilyGO's SX1262 module

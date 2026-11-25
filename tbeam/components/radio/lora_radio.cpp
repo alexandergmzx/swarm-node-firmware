@@ -26,7 +26,7 @@ constexpr uint8_t kSpreadingFactor = 7;
 constexpr uint8_t kCodingRateDenom = 5;   // CR 4:5, RadioLib's "cr" is the denominator
 constexpr uint8_t kSyncWord = 0x12;       // private — RadioLib translates this for SX126x internally
 constexpr int8_t kTxPowerDbm = CONFIG_SWARM_TX_POWER_DBM;  // 2 = lab floor, indoors (ADR 0031 decision 2);
-                                                          // 8 = Madrid field profile (ADR 0031 amendment) — Kconfig
+                                                          // 8 = EU field profile (ADR 0031 amendment) — Kconfig
 constexpr uint16_t kPreambleSymbols = 8;
 constexpr float kSx1262TcxoVoltage = 1.8f;
 }  // namespace
