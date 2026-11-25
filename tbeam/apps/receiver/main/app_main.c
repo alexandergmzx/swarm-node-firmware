@@ -38,6 +38,8 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "board_pins.h"
+#include "display.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -62,6 +64,103 @@ static const char *TAG = "receiver";
  * holds during radio silence; a timeout costs nothing (lora_radio_rx_poll
  * leaves the radio armed and returns ESP_ERR_TIMEOUT without touching it). */
 #define RX_POLL_TIMEOUT_MS 1000
+
+/* Counters for the bench status screen (CONFIG_SWARM_DISPLAY). Written by the
+ * RX loop, read by the display task on Core 1, under one spinlock. A frame is
+ * counted as RAW_SENSOR when it is 26 B (node_id = low nibble of byte 0, per
+ * messages.md), as a link-test frame when it starts a5 5a 'LNK' (board_probe),
+ * and as "other" otherwise. */
+#define MAX_NODE 15
+static portMUX_TYPE s_stats_lock = portMUX_INITIALIZER_UNLOCKED;
+static struct {
+    uint32_t per_node[MAX_NODE + 1];
+    uint32_t lnk;
+    uint8_t lnk_last_seq;
+    uint32_t other;
+    uint32_t total;
+    int last_rssi;
+    float last_snr;
+    int64_t last_us;
+} s_rx = {.last_us = -1};
+static lora_chip_t s_chip = LORA_CHIP_UNKNOWN;
+
+static void count_frame(const uint8_t *d, size_t len, float rssi, float snr) {
+    portENTER_CRITICAL(&s_stats_lock);
+    s_rx.total++;
+    if (len == 26) {
+        s_rx.per_node[d[0] & 0x0F]++;
+    } else if (len >= 6 && d[0] == 0xA5 && d[1] == 0x5A && d[2] == 'L' && d[3] == 'N' && d[4] == 'K') {
+        s_rx.lnk++;
+        s_rx.lnk_last_seq = d[5];
+    } else {
+        s_rx.other++;
+    }
+    s_rx.last_rssi = (int)rssi;
+    s_rx.last_snr = snr;
+    s_rx.last_us = esp_timer_get_time();
+    portEXIT_CRITICAL(&s_stats_lock);
+}
+
+/* Bench status screen, once a second on Core 1:
+ *   RX  433-LAB  SX1262      role, band profile, radio (title bar)
+ *   433.175MHz 125k SF7      channel
+ *   frames 123  other 0      totals
+ *   n1 17 n2 16 n3 0         RAW_SENSOR frames per node (two rows)
+ *   link 42/60 (seq 42)      board_probe link-test frames
+ *   last -27dBm 12.2dB 1s    last frame: RSSI, SNR, age
+ *   GPS 25.6866 -100.3161    receiver's own fix, or "GPS no fix"
+ *   vbus 5.08V               AXP2101 */
+static void render_status(void) {
+    const lora_profile_t *prof = lora_radio_profile();
+    swarm_display_row(0, "RX  %s  %s", prof->name,
+                      s_chip == LORA_CHIP_SX1262 ? "SX1262" : s_chip == LORA_CHIP_SX1278 ? "SX1278" : "?");
+    swarm_display_row(1, "%lu.%03luMHz %uk SF%u", (unsigned long)(prof->freq_khz / 1000),
+                      (unsigned long)(prof->freq_khz % 1000), prof->bw_khz, prof->sf);
+
+    portENTER_CRITICAL(&s_stats_lock);
+    typeof(s_rx) rx = s_rx;
+    portEXIT_CRITICAL(&s_stats_lock);
+
+    swarm_display_row(2, "frames %lu  other %lu", (unsigned long)rx.total, (unsigned long)rx.other);
+    char line[2][32] = {"", ""};
+    int used = 0, li = 0;
+    for (int n = 1; n <= 9 && li < 2; n++) {
+        if (rx.per_node[n] == 0 && n > 2) continue;  // nodes 1 and 2 always shown
+        int w = snprintf(line[li] + used, sizeof(line[li]) - used, "%sn%d %lu", used ? " " : "", n,
+                         (unsigned long)rx.per_node[n]);
+        if (used + w > SWARM_DISPLAY_COLS) {
+            li++;
+            used = 0;
+            if (li < 2) used = snprintf(line[li], sizeof(line[li]), "n%d %lu", n, (unsigned long)rx.per_node[n]);
+        } else {
+            used += w;
+        }
+    }
+    swarm_display_row(3, "%s", line[0]);
+    if (rx.lnk > 0) {
+        swarm_display_row(4, "link %lu (seq %u)", (unsigned long)rx.lnk, rx.lnk_last_seq);
+    } else {
+        swarm_display_row(4, "%s", line[1]);
+    }
+
+    if (rx.last_us < 0) {
+        swarm_display_row(5, "listening, no frame");
+    } else {
+        long age = (long)((esp_timer_get_time() - rx.last_us) / 1000000);
+        swarm_display_row(5, "last %ddBm %.1fdB %lds", rx.last_rssi, rx.last_snr, age);
+    }
+
+    swarm_time_ref_t ref;
+    if (swarm_gps_time_get_ref(&ref) == ESP_OK && ref.position_valid) {
+        swarm_display_row(6, "GPS %.4f %.4f", ref.lat_1e7 / 1e7, ref.lon_1e7 / 1e7);
+    } else {
+        swarm_display_row(6, "GPS no fix");
+    }
+    swarm_pmu_info_t pmu;
+    if (swarm_pmu_read(&pmu) == ESP_OK) {
+        swarm_display_row(7, "vbus %.2fV%s", pmu.vbus_mv / 1000.0, pmu.battery_present ? "  bat ok" : "");
+    }
+}
 
 static void print_tether_line(const uint8_t *data, size_t len, float rssi, float snr) {
     /* Hex-encode inline rather than pulling in a formatting helper — this is
@@ -134,6 +233,13 @@ void app_main(void) {
     }
     ESP_LOGI(TAG, "radio identified: %s", chip == LORA_CHIP_SX1262 ? "SX1262" : "SX1278");
 
+    // The panel: on a classic it shares the PMU's bus (IO21/IO22); on the S3
+    // it sits on bus 0 (IO17/IO18), which the display component opens itself.
+    s_chip = chip;
+    if (swarm_display_init(SWARM_PMU_SHARES_SENSOR_BUS ? swarm_pmu_bus() : NULL) == ESP_OK) {
+        swarm_display_start(render_status, 1000);
+    }
+
     // Position only (see the header): the NMEA reader task from
     // components/gps_time feeds the FIX line. Started after the radio, the
     // same order as the satellite, so the GPIO ISR service the PPS edge
@@ -159,6 +265,7 @@ void app_main(void) {
                                               RX_POLL_TIMEOUT_MS);
         if (rx_err == ESP_OK) {
             print_tether_line(buf, len, rssi, snr);
+            count_frame(buf, len, rssi, snr);
         } else if (rx_err != ESP_ERR_TIMEOUT) {
             ESP_LOGW(TAG, "rx_poll error: %s", esp_err_to_name(rx_err));
         }
