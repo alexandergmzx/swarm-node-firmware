@@ -1,17 +1,75 @@
-# Firmware
+# swarm-node-firmware
 
-**One node, two board variants** ([ADR 0027](../docs/adr/0027-prototype-fleet-external-sensor-kit.md)): the classic T-Beam (ESP32) runs the satellite role, the T-Beam S3 Supreme runs the receiver — two separate ESP-IDF apps sharing pin maps, radio driver and wire-format headers ([ADR 0028](../docs/adr/0028-esp-idf-for-the-prototype.md); the why is in [`tbeam/README.md`](tbeam/README.md)). A camera node's payload computer ([ADR 0008](../docs/adr/0008-four-module-node-pi-payload-computer.md) / [0009](../docs/adr/0009-image-thumbnails-over-lora.md)) runs Linux, and its Python code lives in the [`node-computer-payload/`](../node-computer-payload/) git submodule (repo `swarm-node-payload`) — the deliberate exception to the Python-location rule, see [CLAUDE.md](../CLAUDE.md#where-python-lives) — not here.
+ESP-IDF firmware for low-cost environmental sensor nodes that talk over LoRa in a GPS-timed TDMA
+schedule. Each satellite node reads PM2.5, CO2, temperature, humidity, pressure and a gas-resistance
+channel. It packs them into a 26-byte `RAW_SENSOR` frame and transmits it once per 5 s superframe
+in its own slot. A USB-tethered receiver prints every frame for a ground station.
 
-| Target | Subdirectory | Toolchain |
-|--------|--------------|-----------|
-| ESP32 + ESP32-S3 (classic T-Beam satellites, T-Beam S3 Supreme receiver) | [`tbeam/`](tbeam/) | ESP-IDF v5.4.1 + `idf.py` |
-| Shared headers | [`shared/protocol/`](shared/protocol/) | C headers, no toolchain |
+This firmware is one part of the *swarm* research project (a network of sensor nodes along an
+industrial pollution corridor). The project's design record lives in a separate repository, which
+is private.
 
-Contracts in [`shared/protocol/`](shared/protocol/):
+## Boards and sensors
 
-- [`sensor_bundle.h`](shared/protocol/sensor_bundle.h) — the 16-byte `sensor_bundle_t`, **internal** to the T-Beam firmware: the hand-off from the Core 1 acquisition threads to the frame packer, guarded by its size assertion.
-- [`payload_link.h`](shared/protocol/payload_link.h) — Pi ↔ ESP32-S3 framed UART link on camera nodes (spec: [`protocols/specs/payload-uart-link.md`](../protocols/specs/payload-uart-link.md)). A real wire format between two independently-built binaries, and sacred.
+| Role | Board | MCU / target | Radio | GNSS |
+|---|---|---|---|---|
+| Satellite | LilyGO T-Beam (classic, V1.1/V1.2 with AXP2101) | ESP32, `esp32` | SX1278 (HPD14A), 433 MHz | NEO-6M, no PPS routed |
+| Satellite or receiver | LilyGO T-Beam S3 Supreme V3.0 | ESP32-S3, `esp32s3` | SX1262 | L76K, PPS on IO6 |
 
-The node's only **on-air** contract is `RAW_SENSOR` ([`protocols/specs/messages.md`](../protocols/specs/messages.md)).
+The external sensor kit on every satellite is a Plantower PMS5003, PMSA003 or PMS7003 (UART, same
+32-byte frame), a Sensirion SCD30 (I2C `0x61`) and a Bosch BME688 (I2C `0x76`). Absent sensors are
+detected at boot. Their fields are sent with the VALID flag cleared.
 
-Structs must be byte-identical on all sides; include/mirror the headers rather than duplicating them.
+## Layout
+
+| Path | What it holds |
+|---|---|
+| `tbeam/apps/satellite/` | TDMA transmitter. Core 0 runs GPS time discipline and radio TX; Core 1 runs the sensor acquisition tasks |
+| `tbeam/apps/receiver/` | Continuous-RX receiver. It prints `RX <rssi> <snr> <hex>` and `FIX …` lines on USB |
+| `tbeam/apps/board_probe/` | One-shot bring-up diagnostic: PMU, I2C scan, radio identity, NMEA/PPS, a 60-frame link test |
+| `tbeam/components/` | `board` (pin maps), `radio` (RadioLib facade and the interop profile), `pmu` (AXP2101 rails), `gps_time`, `bme68x`, `swarm_proto` |
+| `tbeam/third_party/` | RadioLib, XPowersLib and the Bosch BME68x SensorAPI as git submodules, pinned |
+| `shared/protocol/` | C headers that must stay byte-identical across builds: `sensor_bundle.h` (internal hand-off) and `payload_link.h` (camera-payload UART) |
+
+The over-the-air `RAW_SENSOR` layout is packed in `tbeam/apps/satellite/main/frame.c`.
+Field order, scale factors and sentinels are documented in `frame.h`.
+
+## Build
+
+You need ESP-IDF **v5.4.1**.
+
+```bash
+git clone --recurse-submodules https://github.com/alexandergmzx/swarm-node-firmware.git
+cd swarm-node-firmware/tbeam/apps/satellite
+. ~/esp/v5.4.1/esp-idf/export.sh
+
+# one build directory per unit; the node id (1-9, the 500 ms TDMA slot) comes from an overlay
+idf.py -B build-node1 -DSDKCONFIG=$PWD/build-node1/sdkconfig \
+  -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;nodes/node1.defaults" -DIDF_TARGET=esp32 build
+idf.py -B build-node1 -p /dev/ttyACM0 flash monitor
+```
+
+The receiver and the bring-up probe use the same build commands in their own app directories.
+Per-unit provisioning, the task and core map, the bus maps and the radio profile are described in
+[`tbeam/README.md`](tbeam/README.md).
+
+## Radio profile
+
+All nodes of one mesh must agree on the profile: 433.175 MHz, 125 kHz, SF7, CR 4:5, explicit header,
+CRC on, 8-symbol preamble, private sync word `0x12`. TX power is `CONFIG_SWARM_TX_POWER_DBM`, with a
+default of 2 dBm. At 433 MHz the range stops at 10 dBm (the EU short-range-device limit is 10 mW
+e.r.p.). Check the rules of your country before you transmit.
+
+## Cross-references
+
+Comments and READMEs cite the project's design record:
+
+- "ADR NNNN" means an architecture decision record.
+- Paths under `docs/`, `protocols/`, `hardware/`, `python-scripts/` and `tools/` refer to files in
+  the parent repository.
+
+Neither is needed to build or run the firmware.
+
+## Licence
+
+MIT — see [`LICENSE`](LICENSE). The libraries under `tbeam/third_party/` keep their own licences.
