@@ -41,6 +41,11 @@ void swarm_state_set_bme688(float temp_c, float humidity_pct,
 void swarm_state_snapshot_for_tx(sensor_bundle_t *bundle_out,
                                   swarm_env_overlay_t *env_out);
 
+/* Read-only copy for the status screen: the same staleness rule applied to
+ * the copy's flags, nothing stored changes and seq_number is not advanced
+ * (only the TX path may advance it). */
+void swarm_state_peek(sensor_bundle_t *bundle_out, swarm_env_overlay_t *env_out);
+
 #ifdef __cplusplus
 }
 #endif

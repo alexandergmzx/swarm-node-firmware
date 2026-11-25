@@ -9,7 +9,11 @@
  * this is a separate app from the receiver rather than a role flag.
  */
 
+#include "display.h"
 #include "esp_log.h"
+#include "esp_timer.h"
+#include "frame.h"
+#include "sdkconfig.h"
 #include "gps_time.h"
 #include "i2c_bus.h"
 #include "lora_radio.h"
@@ -21,6 +25,72 @@
 #include "tdma.h"
 
 static const char *TAG = "satellite";
+
+/* Bench status screen (CONFIG_SWARM_DISPLAY), redrawn once a second on Core 1:
+ *   SAT node 4    915-MX     role, node id, band profile (title bar)
+ *   SX1262 916.700 +2dBm     radio, frequency, TX power
+ *   GPS NMEA +-37ms          time source and error bound, or "waiting"
+ *   25.68661 -100.31611      position, or "no position"
+ *   TX 42  3s ago  sk 0      frames sent, age of the last, skipped slots
+ *   PM2.5 12.3  CO2 612      Core 1 sensor values ("--" when stale)
+ *   T 24.1C  RH 45%          BME688
+ *   vbus 5.08V  bat --       AXP2101 */
+static lora_chip_t s_chip = LORA_CHIP_UNKNOWN;
+
+static void render_status(void) {
+    const lora_profile_t *prof = lora_radio_profile();
+    swarm_display_row(0, "SAT node %d  %s", CONFIG_SWARM_NODE_ID, prof->name);
+    const char *radio = s_chip == LORA_CHIP_SX1278 ? "SX1278" : s_chip == LORA_CHIP_SX1262 ? "SX1262" : "NO RADIO";
+    swarm_display_row(1, "%s %lu.%03lu %+ddBm", radio, (unsigned long)(prof->freq_khz / 1000),
+                      (unsigned long)(prof->freq_khz % 1000), prof->tx_dbm);
+
+    swarm_time_ref_t ref;
+    swarm_gps_time_get_ref(&ref);
+    if (!ref.time_valid) {
+        swarm_display_row(2, "GPS waiting for fix");
+        swarm_display_row(3, "(silent until a fix)");
+    } else {
+        swarm_display_row(2, "GPS %s +-%lums", ref.disciplined ? "PPS" : "NMEA", (unsigned long)ref.error_ms);
+        if (ref.position_valid) {
+            swarm_display_row(3, "%.5f %.5f", ref.lat_1e7 / 1e7, ref.lon_1e7 / 1e7);
+        } else {
+            swarm_display_row(3, "no position");
+        }
+    }
+
+    swarm_tdma_stats_t st;
+    swarm_tdma_get_stats(&st);
+    if (CONFIG_SWARM_NODE_ID == 15) {
+        swarm_display_row(4, "UNPROVISIONED: no TX");
+    } else if (st.last_tx_us < 0) {
+        swarm_display_row(4, "TX none yet  sk %lu", (unsigned long)st.skipped);
+    } else {
+        long age_s = (long)((esp_timer_get_time() - st.last_tx_us) / 1000000);
+        swarm_display_row(4, "TX %lu %lds ago sk %lu", (unsigned long)st.tx_ok, age_s, (unsigned long)st.skipped);
+    }
+
+    sensor_bundle_t b;
+    swarm_env_overlay_t env;
+    swarm_state_peek(&b, &env);
+    char pm[8] = "--", co2[8] = "--";
+    if (b.flags & SWARM_FLAG_PMS7003_VALID) snprintf(pm, sizeof(pm), "%u.%u", b.pm25_raw / 10, b.pm25_raw % 10);
+    if (b.flags & SWARM_FLAG_SCD30_VALID) snprintf(co2, sizeof(co2), "%u", b.co2_raw);
+    swarm_display_row(5, "PM2.5 %s  CO2 %s", pm, co2);
+    if (b.flags & SWARM_FLAG_ENV_VALID) {
+        swarm_display_row(6, "T %.1fC  RH %.0f%%", env.temp_c, env.humidity_pct);
+    } else {
+        swarm_display_row(6, "T/RH --  (no BME688)");
+    }
+
+    swarm_pmu_info_t pmu;
+    if (swarm_pmu_read(&pmu) == ESP_OK) {
+        if (pmu.battery_present) {
+            swarm_display_row(7, "vbus %.2fV bat %.2fV", pmu.vbus_mv / 1000.0, pmu.batt_mv / 1000.0);
+        } else {
+            swarm_display_row(7, "vbus %.2fV  bat --", pmu.vbus_mv / 1000.0);
+        }
+    }
+}
 
 void app_main(void) {
     ESP_LOGI(TAG, "swarm satellite starting");
@@ -36,6 +106,16 @@ void app_main(void) {
     swarm_pmu_info_t pmu = {0};
     if (swarm_pmu_init(swarm_i2c_bus(), &pmu) != ESP_OK) {
         ESP_LOGE(TAG, "PMU init failed — the LoRa and GNSS rails may be off; expect the radio probe to fail");
+    }
+
+    // The panel sits on the same sensor bus (classic: shared with the PMU;
+    // S3: bus 0, powered by ALDO1 which swarm_pmu_init() just enabled).
+    // A first frame right away, so the screen shows life before the radio
+    // and GNSS come up.
+    if (swarm_display_init(swarm_i2c_bus()) == ESP_OK) {
+        swarm_display_row(0, "SAT node %d  booting", CONFIG_SWARM_NODE_ID);
+        swarm_display_row(2, "radio + GNSS ...");
+        swarm_display_flush();
     }
 
     lora_chip_t chip = LORA_CHIP_UNKNOWN;
@@ -55,6 +135,11 @@ void app_main(void) {
 
     if (swarm_tdma_start() != ESP_OK) {
         ESP_LOGE(TAG, "tdma start failed — nothing left for app_main to do");
+    }
+
+    s_chip = chip;
+    if (swarm_display_present() && swarm_display_start(render_status, 1000) != ESP_OK) {
+        ESP_LOGW(TAG, "display task not started");
     }
 
     // Everything of substance now runs in the tasks started above;

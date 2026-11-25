@@ -8,6 +8,6 @@ idf_component_register(
          "sensors/scd30.c"
          "sensors/bme688.c"
     INCLUDE_DIRS "." "sensors"
-    REQUIRES radio board pmu gps_time swarm_proto bme68x
+    REQUIRES radio board pmu gps_time swarm_proto bme68x display
     PRIV_REQUIRES driver esp_timer
 )

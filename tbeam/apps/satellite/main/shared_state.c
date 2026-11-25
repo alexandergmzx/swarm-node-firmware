@@ -63,6 +63,18 @@ void swarm_state_set_bme688(float temp_c, float humidity_pct,
     portEXIT_CRITICAL(&s_lock);
 }
 
+void swarm_state_peek(sensor_bundle_t *bundle_out, swarm_env_overlay_t *env_out) {
+    int64_t now = esp_timer_get_time();
+    portENTER_CRITICAL(&s_lock);
+    *bundle_out = s_bundle;
+    *env_out = s_env;
+    bool pms_stale = s_pms_updated_us < 0 || (now - s_pms_updated_us) > STALE_US;
+    bool scd_stale = s_scd30_updated_us < 0 || (now - s_scd30_updated_us) > STALE_US;
+    portEXIT_CRITICAL(&s_lock);
+    if (pms_stale) bundle_out->flags &= (uint8_t)~SWARM_FLAG_PMS7003_VALID;
+    if (scd_stale) bundle_out->flags &= (uint8_t)~SWARM_FLAG_SCD30_VALID;
+}
+
 void swarm_state_snapshot_for_tx(sensor_bundle_t *bundle_out,
                                   swarm_env_overlay_t *env_out) {
     int64_t now = esp_timer_get_time();

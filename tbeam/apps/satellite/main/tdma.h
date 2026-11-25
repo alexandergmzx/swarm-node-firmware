@@ -12,6 +12,8 @@
 #ifndef SWARM_TDMA_H_
 #define SWARM_TDMA_H_
 
+#include <stdint.h>
+
 #include "esp_err.h"
 
 #ifdef __cplusplus
@@ -23,6 +25,17 @@ extern "C" {
  * protocols/specs/messages.md's node_id allocation table in code, not just
  * in the ADR. */
 esp_err_t swarm_tdma_start(void);
+
+/* Counters for the status screen, read under the same lock the TDMA task
+ * writes them with. */
+typedef struct {
+    uint32_t tx_ok;        /* frames handed to the radio successfully */
+    uint32_t tx_fail;      /* lora_radio_tx() errors */
+    uint32_t skipped;      /* superframes skipped: clock error over budget */
+    int64_t last_tx_us;    /* esp_timer time of the last good TX, -1 = none */
+} swarm_tdma_stats_t;
+
+void swarm_tdma_get_stats(swarm_tdma_stats_t *out);
 
 #ifdef __cplusplus
 }

@@ -31,6 +31,15 @@ _Static_assert(FALLBACK_START_OFFSET_MS + FALLBACK_MAX_ERROR_MS +
                    (LORA_RADIO_AIRTIME_US(SWARM_RAW_SENSOR_SIZE) + 999u) / 1000u <= SLOT_MS,
                "clock-fallback TX overruns the TDMA slot at this radio profile (ADR 0016)");
 
+static portMUX_TYPE s_stats_lock = portMUX_INITIALIZER_UNLOCKED;
+static swarm_tdma_stats_t s_stats = {.last_tx_us = -1};
+
+void swarm_tdma_get_stats(swarm_tdma_stats_t *out) {
+    portENTER_CRITICAL(&s_stats_lock);
+    *out = s_stats;
+    portEXIT_CRITICAL(&s_stats_lock);
+}
+
 static void print_tx_echo(const uint8_t *data, size_t len) {
     static const char hex[] = "0123456789abcdef";
     char hexbuf[2 * SWARM_RAW_SENSOR_SIZE + 1];
@@ -115,6 +124,9 @@ static void tdma_task(void *arg) {
         if (!ref.disciplined && ref.error_ms > FALLBACK_MAX_ERROR_MS) {
             ESP_LOGW(TAG, "clock error %lu ms exceeds fallback budget — skipping this superframe (RX-only)",
                      (unsigned long)ref.error_ms);
+            portENTER_CRITICAL(&s_stats_lock);
+            s_stats.skipped++;
+            portEXIT_CRITICAL(&s_stats_lock);
             continue;
         }
 
@@ -128,6 +140,14 @@ static void tdma_task(void *arg) {
                                      ref.time_valid, &env, &bundle, frame);
 
         esp_err_t err = lora_radio_tx(frame, sizeof(frame));
+        portENTER_CRITICAL(&s_stats_lock);
+        if (err == ESP_OK) {
+            s_stats.tx_ok++;
+            s_stats.last_tx_us = esp_timer_get_time();
+        } else {
+            s_stats.tx_fail++;
+        }
+        portEXIT_CRITICAL(&s_stats_lock);
         if (err == ESP_OK) {
             print_tx_echo(frame, sizeof(frame));
         } else {
