@@ -50,11 +50,28 @@ below); the receiver's `node_id` is hard-coded 0.
 Each app is its own `idf.py` project root:
 
 ```sh
-cd tbeam/apps/satellite   # or receiver, or board_probe
-idf.py set-target esp32            # esp32s3 for the receiver
-idf.py build
-idf.py -p /dev/ttyUSB0 flash monitor
+cd tbeam/apps/receiver    # or satellite, or board_probe
+# a classic T-Beam (esp32) is always 433 MHz:
+idf.py -B build-esp32 -DSDKCONFIG=$PWD/build-esp32/sdkconfig -DIDF_TARGET=esp32 build
+# an S3 Supreme (esp32s3) must name its band; a 433 MHz and a 915 MHz Supreme
+# are the same chips, so the build refuses to guess:
+idf.py -B build-s3-915 -DSDKCONFIG=$PWD/build-s3-915/sdkconfig \
+       -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;../../profiles/band-915.defaults" -DIDF_TARGET=esp32s3 build
+idf.py -B build-s3-915 -p /dev/ttyACM<n> flash monitor
 ```
+
+### Band profiles
+
+| Profile | Overlay | Radio | Boards | 26 B frame on air |
+|---|---|---|---|---|
+| `433-LAB` | `profiles/band-433.defaults` (default on `esp32`) | 433.175 MHz / 125 kHz / SF7 | classic T-Beam (SX1278), 433 MHz S3 Supreme | 61.7 ms |
+| `915-MX` | `profiles/band-915.defaults` (`esp32s3` only) | 916.700 MHz / 500 kHz / SF9 | 915 MHz S3 Supreme (SX1262) | 51.5 ms |
+
+Both use CR 4:5, an 8-symbol preamble and sync word `0x12`; every node of one mesh must share a
+profile. Name build directories after the band (`build-node4-915`): an existing `sdkconfig` wins
+over any overlay, so `cmake/band_guard.cmake` stops a build whose overlay disagrees with the band
+its `sdkconfig` already records. Before flashing, `grep -E 'SWARM_(NODE_ID|RADIO_PROFILE_NAME)=' <build>/sdkconfig`;
+at boot the radio component prints a `PROFILE …` line before it probes the chip.
 
 ### Provisioning a satellite (one build directory per unit)
 
@@ -67,8 +84,13 @@ cd tbeam/apps/satellite
 N=1   # node_id 1 → classic-A, 2 → classic-B, 3 → the first S3 satellite …
 idf.py -B build-node$N -DSDKCONFIG=$PWD/build-node$N/sdkconfig \
        -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;nodes/node$N.defaults" \
-       -DIDF_TARGET=esp32 build          # esp32s3 for an S3 Supreme satellite
+       -DIDF_TARGET=esp32 build
 idf.py -B build-node$N -p /dev/ttyACM<n> flash monitor
+
+# an S3 Supreme satellite adds its band overlay last:
+idf.py -B build-node4-915 -DSDKCONFIG=$PWD/build-node4-915/sdkconfig \
+       -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;nodes/node4.defaults;../../profiles/band-915.defaults" \
+       -DIDF_TARGET=esp32s3 build
 ```
 
 ESP-IDF applies `sdkconfig.defaults.<target>` after each listed file, so the target overlays still

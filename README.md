@@ -53,12 +53,22 @@ The receiver and the bring-up probe have no per-unit overlays: build them from t
 Per-unit provisioning, the task and core map, the bus maps and the radio profile are described in
 [`tbeam/README.md`](tbeam/README.md).
 
-## Radio profile
+## Radio profiles
 
-All nodes of one mesh must agree on the profile: 433.175 MHz, 125 kHz, SF7, CR 4:5, explicit header,
-CRC on, 8-symbol preamble, private sync word `0x12`. TX power is `CONFIG_SWARM_TX_POWER_DBM`, with a
-default of 2 dBm. At 433 MHz the range stops at 10 dBm (the EU short-range-device limit is 10 mW
-e.r.p.). Check the rules of your country before you transmit.
+All nodes of one mesh must share a profile. The band is a build choice, because the RF front end
+cannot be read by firmware:
+
+| Profile | Radio | Boards | TX power range |
+|---|---|---|---|
+| `433-LAB` | 433.175 MHz / 125 kHz / SF7 | classic T-Beam; 433 MHz S3 Supreme | 2–10 dBm (EU SRD: 10 mW e.r.p.) |
+| `915-MX` | 916.700 MHz / 500 kHz / SF9, one fixed channel | 915 MHz S3 Supreme | −9 to +22 dBm |
+
+Both use CR 4:5, explicit header, CRC, an 8-symbol preamble and sync word `0x12`. Every build
+defaults to +2 dBm. A classic defaults to `433-LAB`. An S3 build names its band with
+`../../profiles/band-433.defaults` or `band-915.defaults` and does not compile without one.
+`915-MX` uses a 500 kHz channel because Mexico's IFT-008-2015 (§4.3) requires a 6 dB bandwidth of
+at least 500 kHz for a non-hopping system in 902–928 MHz. Its centre frequency is provisional
+until a noise scan confirms it. Check the rules of your country before you transmit.
 
 ## Cross-references
 

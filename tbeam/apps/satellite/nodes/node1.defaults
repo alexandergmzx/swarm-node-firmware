@@ -1,5 +1,7 @@
 # Per-unit provisioning overlay (ADR 0016 slot = node_id). Build with
 #   idf.py -B build-node1 -DSDKCONFIG=build-node1/sdkconfig \
-#          -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;nodes/node1.defaults" -DIDF_TARGET=<esp32|esp32s3> build
+#          -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;nodes/node1.defaults" -DIDF_TARGET=esp32 build
+# An S3 Supreme (esp32s3) appends its band: ...;nodes/node1.defaults;../../profiles/band-<433|915>.defaults
+# and uses a band-named build directory (build-node1-915).
 # (ESP-IDF applies sdkconfig.defaults.<target> after each listed file.)
 CONFIG_SWARM_NODE_ID=1
