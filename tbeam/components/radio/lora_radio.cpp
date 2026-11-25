@@ -132,9 +132,11 @@ extern "C" esp_err_t lora_radio_init(lora_chip_t *out_chip) {
   // Printed before the probe so it shows even when no radio answers: the
   // band is a build choice the board cannot confirm, and a wrong-band build
   // on a node looks like silence, not like an error.
-  ESP_LOGW(TAG, "PROFILE %s: %.3f MHz / %d kHz / SF%u / CR4:%u / sync 0x%02x / %+d dBm / 26 B = %.1f ms on air",
+  ESP_LOGW(TAG, "PROFILE %s: %.3f MHz / %d kHz / SF%u / CR4:%u / sync 0x%02x / %+d dBm / 26 B = %.1f ms on air, "
+           "%.2f %% of a 5 s superframe (ceiling %.1f %%)",
            CONFIG_SWARM_RADIO_PROFILE_NAME, kFreqMHz, CONFIG_SWARM_RADIO_BW_KHZ, kSpreadingFactor,
-           kCodingRateDenom, kSyncWord, kTxPowerDbm, LORA_RADIO_AIRTIME_US(26) / 1000.0);
+           kCodingRateDenom, kSyncWord, kTxPowerDbm, LORA_RADIO_AIRTIME_US(26) / 1000.0,
+           LORA_RADIO_AIRTIME_US(26) / 50000.0, CONFIG_SWARM_RADIO_MAX_DUTY_PERMILLE / 10.0);
 
   s_hal = new EspHal(SWARM_PIN_LORA_SCK, SWARM_PIN_LORA_MISO, SWARM_PIN_LORA_MOSI);
 

@@ -27,7 +27,7 @@ menu "Swarm radio profile"
                 duty). Indoors only where 433 MHz is not a free-use band.
 
         config SWARM_RADIO_PROFILE_915
-            bool "915-MX: 916.700 MHz / 500 kHz / SF9 (Mexico, 902-928 MHz)"
+            bool "915-MX: 916.700 MHz / 500 kHz / SF8 (Mexico, 902-928 MHz)"
             help
                 One fixed 500 kHz channel, which is the digital-modulation
                 class of IFT-008-2015 section 4.3: a 6 dB bandwidth of at
@@ -36,7 +36,10 @@ menu "Swarm radio profile"
                 provision (hopping needs more than 50 channels). The
                 916.7 MHz centre avoids the LoRaWAN US915 uplink and downlink
                 channels and the Meshtastic US defaults. It is provisional
-                until a noise scan confirms it. SX1262 boards only.
+                until a noise scan confirms it. SF8, not SF9: one 26 B frame
+                per 5 s superframe is 28.3 ms on air, 0.57 % airtime, inside
+                the 1 % ceiling this profile keeps (SF9 would be 51.5 ms,
+                1.03 %). SX1262 boards only.
 
     endchoice
 
@@ -60,8 +63,18 @@ menu "Swarm radio profile"
 
     config SWARM_RADIO_SF
         int
-        default 9 if SWARM_RADIO_PROFILE_915
+        default 8 if SWARM_RADIO_PROFILE_915
         default 7
+
+    # Airtime ceiling per node, in permille of wall time: 1 % at 915-MX
+    # (the fleet's own rule, Alexander 2026-11-25; IFT-008-2015 sets no duty
+    # limit), 10 % at 433-LAB (the EU SRD limit, ERC/REC 70-03 h1.1). The TDMA
+    # task checks the superframe against it at compile time and board_probe
+    # paces its link test with it.
+    config SWARM_RADIO_MAX_DUTY_PERMILLE
+        int
+        default 10 if SWARM_RADIO_PROFILE_915
+        default 100
 
     config SWARM_TX_POWER_DBM
         int "LoRa TX power (dBm)"

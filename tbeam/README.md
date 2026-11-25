@@ -65,7 +65,7 @@ idf.py -B build-s3-915 -p /dev/ttyACM<n> flash monitor
 | Profile | Overlay | Radio | Boards | 26 B frame on air |
 |---|---|---|---|---|
 | `433-LAB` | `profiles/band-433.defaults` (default on `esp32`) | 433.175 MHz / 125 kHz / SF7 | classic T-Beam (SX1278), 433 MHz S3 Supreme | 61.7 ms |
-| `915-MX` | `profiles/band-915.defaults` (`esp32s3` only) | 916.700 MHz / 500 kHz / SF9 | 915 MHz S3 Supreme (SX1262) | 51.5 ms |
+| `915-MX` | `profiles/band-915.defaults` (`esp32s3` only) | 916.700 MHz / 500 kHz / SF8 | 915 MHz S3 Supreme (SX1262) | 28.3 ms (0.57 % airtime; ceiling 1 %) |
 
 Both use CR 4:5, an 8-symbol preamble and sync word `0x12`; every node of one mesh must share a
 profile. Name build directories after the band (`build-node4-915`): an existing `sdkconfig` wins
