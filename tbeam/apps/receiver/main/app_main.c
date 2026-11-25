@@ -7,7 +7,7 @@
  * that applies here. The GNSS UART is opened for position only: the
  * shared gps_time component runs its NMEA reader, and this app reads the
  * estimate for the FIX line, never for slot discipline. See
- * firmware/tbeam/README.md for the full receiver-vs-satellite rationale.
+ * tbeam/README.md for the full receiver-vs-satellite rationale.
  *
  * Tether contract (protocols/specs/messages.md, a dev contract — changeable
  * without an ADR), two line types over USB CDC-ACM:
@@ -23,7 +23,7 @@
  *       disc       1 when the time reference is PPS-disciplined, else 0
  *                  (a classic spare receiver routes no PPS: always 0)
  *       err_ms     estimated clock error bound, ms; 0 before the first fix
- *     e.g.  FIX 40.4168123 -3.7038456 1789000005 1 0 52
+ *     e.g.  FIX 12.3456789 -45.6789012 1789000005 1 0 52
  *           FIX 0.0000000 0.0000000 0 0 0 0
  *     Exactly seven whitespace-separated fields. Both line types are
  *     printed from this one task, so a FIX line can never interleave

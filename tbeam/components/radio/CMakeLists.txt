@@ -1,5 +1,5 @@
 # C facade over RadioLib (vendored at ../../third_party/RadioLib, pinned to a
-# specific commit past the 7.7.1 tag — see firmware/tbeam/README.md for why).
+# specific commit past the 7.7.1 tag — see tbeam/README.md for why).
 # RadioLib's own root CMakeLists.txt registers itself as an ESP-IDF component
 # when it detects ESP_PLATFORM, so it needs no wrapper; this component just
 # depends on it plus board (pin maps).

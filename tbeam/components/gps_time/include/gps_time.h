@@ -8,7 +8,7 @@
  * found and wired (board_pins.h SWARM_PIN_GPS_PPS >= 0), the PPS edge
  * tightens the same estimate instead of replacing this module.
  *
- * Shared component (firmware/tbeam/components/gps_time). The satellite
+ * Shared component (tbeam/components/gps_time). The satellite
  * reads it for time: tdma_task takes the epoch/error estimate every
  * superframe. The receiver (node_id 0) reads it for position only: it
  * prints its own fix on the USB tether as a FIX line every superframe

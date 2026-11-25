@@ -1,4 +1,4 @@
-# `firmware/tbeam/` — the prototype fleet's firmware
+# `tbeam/` — the prototype fleet's firmware
 
 ESP-IDF v5.4.1 (ADR 0028; confirmed working on
 the development machine — a newer v6.0.2 install exists but needs its Python environment repaired
@@ -22,7 +22,7 @@ optimize for a symmetry the embedded problem does not have, so the two live as s
 sharing `components/`:
 
 ```
-firmware/tbeam/
+tbeam/
 ├── components/            # shared: board pins, radio driver, PMU, GPS time/position, protocol wrapper, Bosch driver
 │   ├── board/               # per-variant pin/bus headers (board_pins.h)
 │   ├── radio/               # RadioLib-behind-a-C-facade (lora_radio.h); the SF7 interop profile lives here
@@ -32,13 +32,13 @@ firmware/tbeam/
 │   └── bme68x/              # wraps the vendored Bosch driver (no build system of its own)
 ├── apps/
 │   ├── satellite/          # esp32 target (also builds esp32s3, for backlog 0030) — the real-time system
-│   ├── receiver/           # esp32s3 target only — the USB-tethered bridge, node_id 0
+│   ├── receiver/           # esp32s3 target (also builds esp32: a classic as a spare receiver) — the USB-tethered bridge, node_id 0
 │   └── board_probe/        # esp32 target only — M1 bring-up diagnostic, not shipped
 └── third_party/            # git submodules, pinned (see below)
 ```
 
 `components/swarm_proto` is a plain `INCLUDE_DIRS` wrapper over `../../shared/protocol` — the
-headers are included, never copied, honouring `firmware/shared/README.md`'s rule that directory
+headers are included, never copied, honouring [`shared/README.md`](../shared/README.md)'s rule that directory
 stays dependency-free C99. `SWARM_NODE_ID` (per-unit provisioning, default 15 = unprovisioned — the
 TDMA task refuses to transmit at 15, mechanically enforcing
 `protocols/specs/messages.md`) is a satellite-only Kconfig
@@ -50,7 +50,7 @@ below); the receiver's `node_id` is hard-coded 0.
 Each app is its own `idf.py` project root:
 
 ```sh
-cd firmware/tbeam/apps/satellite   # or receiver, or board_probe
+cd tbeam/apps/satellite   # or receiver, or board_probe
 idf.py set-target esp32            # esp32s3 for the receiver
 idf.py build
 idf.py -p /dev/ttyUSB0 flash monitor
@@ -63,7 +63,7 @@ produces a node that never transmits. Each unit gets its own build directory and
 seeded from a tracked one-line overlay in [`apps/satellite/nodes/`](apps/satellite/nodes/):
 
 ```sh
-cd firmware/tbeam/apps/satellite
+cd tbeam/apps/satellite
 N=1   # node_id 1 → classic-A, 2 → classic-B, 3 → the first S3 satellite …
 idf.py -B build-node$N -DSDKCONFIG=$PWD/build-node$N/sdkconfig \
        -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;nodes/node$N.defaults" \
@@ -76,7 +76,7 @@ hold. `grep CONFIG_SWARM_NODE_ID build-node$N/sdkconfig` is the check before fla
 `sdkconfig.defaults` never changes an existing `sdkconfig` — that is why the overlays exist.
 
 `idf.py` acts on the project in its working directory: from anywhere else pass
-`-C firmware/tbeam/apps/satellite` (a `-B build-node2 flash` issued from another app directory
+`-C tbeam/apps/satellite` (a `-B build-node2 flash` issued from another app directory
 silently builds and flashes *that* app under a new `build-node2`).
 
 ### A classic as a spare receiver
@@ -86,7 +86,7 @@ the CP210x/CH9102 bridge, 4 MB flash). It is the other half of the swap test —
 the satellite build while a classic receives — and a spare receiver for the fleet:
 
 ```sh
-cd firmware/tbeam/apps/receiver
+cd tbeam/apps/receiver
 idf.py -B build-esp32 -DSDKCONFIG=$PWD/build-esp32/sdkconfig -DSDKCONFIG_DEFAULTS=sdkconfig.defaults -DIDF_TARGET=esp32 build
 ```
 
@@ -95,7 +95,7 @@ idf.py -B build-esp32 -DSDKCONFIG=$PWD/build-esp32/sdkconfig -DSDKCONFIG_DEFAULT
 | Library | Pinned at | Why this pin |
 |---|---|---|
 | [RadioLib](https://github.com/jgromes/RadioLib) | commit `187ef2479` (past the `7.7.1` tag) | The tagged release's bundled ESP-IDF HAL example is ESP32-classic-only (raw-register SPI, `#error`s on other targets). The portable, `driver/spi_master.h`-based HAL — tested in RadioLib's own CI across esp32/esp32s3/esp32c3 — was promoted to a first-party library HAL (`src/hal/ESP-IDF/`, auto-included from `#include <RadioLib.h>` on ESP-IDF builds) on 2026-06-12 and hardened through 2026-07-03, after the last tag. A SHA pin past an unreleased fix is a normal call, not a moving target — "no version moves mid-phase" (ADR 0028) still applies from here. |
-| [XPowersLib](https://github.com/lewisxhe/XPowersLib) | `v0.3.3` | One PMU driver for the whole fleet: every board — both classics (bench-identified 2026-09-03) and the S3 Supreme — carries an **AXP2101**; the component's AXP192 support stays as a zero-cost guard against a misidentified or replacement unit. Wrapped by `components/pmu` (`swarm_pmu_init()`), which enables the ALDO rails the radio and the GNSS hang from — off at power-up on every board — before anything else touches them. |
+| [XPowersLib](https://github.com/lewisxhe/XPowersLib) | `v0.3.3` | One PMU driver for the whole fleet: every board — both classics (bench-identified 2026-09-03) and the S3 Supreme — carries an **AXP2101**; `components/pmu` accepts the AXP2101 only (`begin()` refuses any other chip ID), so a misidentified or replacement unit fails loudly at boot. Wrapped by `components/pmu` (`swarm_pmu_init()`), which enables the ALDO rails the radio and the GNSS hang from — off at power-up on every board — before anything else touches them. |
 | [BME68x_SensorAPI](https://github.com/boschsensortec/BME68x_SensorAPI) | `v4.4.8` | Bosch's own reference driver (`components/bme68x` wraps it — plain vendor C, no build system of its own). |
 
 **Not vendored: Sensirion's `embedded-scd`.** It was tried and dropped: its `embedded-common`
@@ -103,8 +103,8 @@ dependency is itself an uninitialized nested submodule, and the driver expects a
 step to flatten several repos into one buildable tree — friction that fits `idf_component_register`
 poorly for a protocol this small. `apps/satellite/main/sensors/scd30.c` is hand-rolled directly
 against the primary source
-(`docs/app-notes/sensirion/sensirion_scd30_interface-description_v1.0.pdf`, already filed in the
-repo's reference library since 2026-07-28 — no need to re-acquire it), the same way `pms7003.c`
+(`docs/app-notes/sensirion/sensirion_scd30_interface-description_v1.0.pdf`, filed in the parent
+repository's reference library since 2026-07-28 — no need to re-acquire it), the same way `pms7003.c`
 already was against Plantower's datasheet — five I2C commands and a fifteen-line CRC-8, verified
 this session against the datasheet's own worked example (`CRC(0xBEEF) == 0x92`) and the
 CRC-8/NRSC-5 catalog check value.
@@ -125,7 +125,7 @@ wiring; both are closed in the tree now.
    voltages. It runs first in `apps/satellite` (on the shared sensor bus), `apps/receiver` (on
    the dedicated PMU bus it opens itself) and `apps/board_probe`. `board_pins.h` carries the PMU
    pins (`SWARM_PIN_PMU_SDA/SCL/IRQ`), `SWARM_PMU_SHARES_SENSOR_BUS`, and `SWARM_I2C_ADDR_OLED`.
-   The M0 sketches `radio_probe` and `gps_probe` do the same two rail writes through XPowersLib's
+   The M0 Arduino sketches `radio_probe` and `gps_probe` (in the parent repository, not included here) do the same two rail writes through XPowersLib's
    Arduino API before touching the radio or the UART; `pmu_probe` stays read-only.
 2. **Band.** The interop profile is **433.175 MHz** at **+2 dBm indoors** (ADR 0031):
    `components/radio/lora_radio.cpp` `kFreqMHz`, TX power from `CONFIG_SWARM_TX_POWER_DBM`
@@ -154,7 +154,7 @@ IPC.
 | `gps_uart` (`components/gps_time`) | 0 | 18 | NMEA `$--RMC` parsing → the epoch/position estimate `tdma` reads every superframe |
 | `packer` (folded into `tdma`) | 0 | 23 | Frame packing happens inline in `tdma_task`, immediately before TX — no separate task |
 | `pms7003` | 1 | 5 | UART frame parser, ~30 s warm-up gate |
-| `scd30` | 1 | 5 | I2C, 2 s measurement cycle (matches the TDMA cadence), feeds `shared_state` |
+| `scd30` | 1 | 5 | I2C, 2 s measurement cycle (faster than the 5 s superframe, inside the 6 s staleness window), feeds `shared_state` |
 | `bme688` | 1 | 5 | I2C forced-mode reads (T/RH/P + gas), overlays `shared_state`, feeds the SCD30's pressure compensation directly (same bus, no `CALIBRATION_EVENT` round trip) |
 
 `shared_state.c` is the Core 1 → Core 0 hand-off `sensor_bundle_t` has been since
@@ -224,7 +224,7 @@ PMU **AXP2101**, GPS **NEO-6M**, radio **SX1278** (HPDTek HPD14A module, 433 MHz
 | LoRa DIO0 / DIO1 / DIO2 | 26 / 33 / 32 (SX1278: DIO0 is the TX/RX-done IRQ; no BUSY line exists on this part) |
 | I2C SDA / SCL | 21 / 22 — PMU `0x34`, OLED `0x3C`, SCD30 `0x61`, BME688 `0x76` |
 | GPS UART RX / TX / PPS | 34 / 12 / **none** — TIME_PULSE drives only the fix LED (schematic sheet 3); `SWARM_PIN_GPS_PPS` stays −1 |
-| PMU rails | ALDO2 → LoRa, ALDO3 → GPS, VBACKUP → GNSS backup — enabled at boot by `components/pmu` |
+| PMU rails | ALDO2 → LoRa, ALDO3 → GPS — both enabled at 3.3 V at boot by `components/pmu` |
 | PMS7003 RX / TX / `SET` | 36 / 13 / 15 |
 
 **The LoRa RST dispute is closed.** Meshtastic's `variant.h` (GPIO 23) matched the vendor
@@ -249,6 +249,6 @@ free-use band in Mexico, so lab tests there are indoor only) and 8 dBm for the E
 the SX1262 side (the S3), `DIO2`-as-RF-switch and 1.8 V TCXO match the glue LilyGO's SX1262 module
 uses (Meshtastic's `variant.h`: `SX126X_DIO2_AS_RF_SWITCH`, `SX126X_DIO3_TCXO_VOLTAGE 1.8`). The
 classic satellites' radio is settled — SX1278 on the HPDTek HPD14A module — so the boot-time
-SX1276-then-SX1262 probe in `lora_radio_init()` is now a guard rather than a discovery: RadioLib's
+SX1278-then-SX1262 probe in `lora_radio_init()` (reversed on esp32s3) is now a guard rather than a discovery: RadioLib's
 `begin()` performs the SX127x `RegVersion == 0x12` check itself. The vendor-correct class for this
 part is `SX1278` (RadioLib restricts it to 137–175 / 395–525 MHz; `SX1276` also accepts 433 MHz).

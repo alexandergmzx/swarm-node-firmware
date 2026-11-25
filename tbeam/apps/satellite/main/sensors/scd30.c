@@ -2,7 +2,7 @@
 //
 // Protocol verified against docs/app-notes/sensirion/
 // sensirion_scd30_interface-description_v1.0.pdf (Sensirion, v1.0, May 2020;
-// filed in the repo's reference library since 2026-07-28), sections 1.1.2,
+// filed in the parent repository's reference library since 2026-07-28), sections 1.1.2,
 // 1.1.3, 1.4. CRC-8 (poly 0x31, init 0xFF, no reflection,
 // no final XOR) checked this session against both the datasheet's own
 // worked example (CRC(0xBEEF) == 0x92) and the CRC-8/NRSC-5 catalog check

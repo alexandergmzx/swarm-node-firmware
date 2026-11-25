@@ -5,7 +5,7 @@
  * external sensor kit (PMS7003, SCD30, BME688) + frame packing — slow,
  * blocking I/O that must never touch Core 0 (architecture tenet 2).
  *
- * See firmware/tbeam/README.md for the full task/priority table and why
+ * See tbeam/README.md for the full task/priority table and why
  * this is a separate app from the receiver rather than a role flag.
  */
 

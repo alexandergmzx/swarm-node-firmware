@@ -49,7 +49,7 @@ idf.py -B build-node1 -DSDKCONFIG=$PWD/build-node1/sdkconfig \
 idf.py -B build-node1 -p /dev/ttyACM0 flash monitor
 ```
 
-The receiver and the bring-up probe use the same build commands in their own app directories.
+The receiver and the bring-up probe have no per-unit overlays: build them from their own app directory with the same `-B`/`-DIDF_TARGET` arguments and no `nodes/` file.
 Per-unit provisioning, the task and core map, the bus maps and the radio profile are described in
 [`tbeam/README.md`](tbeam/README.md).
 

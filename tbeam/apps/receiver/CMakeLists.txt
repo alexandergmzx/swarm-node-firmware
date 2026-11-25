@@ -5,7 +5,7 @@ cmake_minimum_required(VERSION 3.16)
 # a spare receiver (tether over its UART bridge) — the 2026-09-03 swap test. Continuous-RX radio-to-USB bridge —
 # no TDMA, no sensor pipeline this phase; the GNSS UART is opened for position
 # only (the tether's FIX line, components/gps_time); see
-# firmware/tbeam/README.md for why this is a separate app from the satellite
+# tbeam/README.md for why this is a separate app from the satellite
 # rather than a role flag in a shared main.c.
 set(EXTRA_COMPONENT_DIRS
     "${CMAKE_CURRENT_LIST_DIR}/../../components"
