@@ -23,6 +23,14 @@ static const char *TAG = "tdma";
 #define FALLBACK_MAX_ERROR_MS 200
 #define UNPROVISIONED_NODE_ID 15
 
+// The clock-fallback transmission (start offset + worst clock error + time on
+// air of one RAW_SENSOR frame) must end inside its slot at the build's radio
+// profile (ADR 0016): 210 + 200 + 61.7 ms at 433-LAB, 210 + 200 + 51.5 ms at
+// 915-MX. SF9 at 125 kHz (205.8 ms) would fail here, not on the air.
+_Static_assert(FALLBACK_START_OFFSET_MS + FALLBACK_MAX_ERROR_MS +
+                   (LORA_RADIO_AIRTIME_US(SWARM_RAW_SENSOR_SIZE) + 999u) / 1000u <= SLOT_MS,
+               "clock-fallback TX overruns the TDMA slot at this radio profile (ADR 0016)");
+
 static void print_tx_echo(const uint8_t *data, size_t len) {
     static const char hex[] = "0123456789abcdef";
     char hexbuf[2 * SWARM_RAW_SENSOR_SIZE + 1];
