@@ -53,6 +53,13 @@ void swarm_display_clear(void);
  * callback, or before swarm_display_start(). */
 void swarm_display_row(int row, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
 
+/** Light one pixel (x 0-127, y 0-63; y 0 at the top). Draw after the text
+ * rows, since swarm_display_row() rewrites its whole 8-pixel band. */
+void swarm_display_pixel(int x, int y);
+
+/** A filled vertical bar from y_top down to y_bottom (inclusive), width w. */
+void swarm_display_vbar(int x, int w, int y_top, int y_bottom);
+
 /** Push the framebuffer to the panel. */
 esp_err_t swarm_display_flush(void);
 

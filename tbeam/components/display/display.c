@@ -172,6 +172,17 @@ void swarm_display_row(int row, const char *fmt, ...) {
     }
 }
 
+void swarm_display_pixel(int x, int y) {
+    if (x < 0 || x >= PANEL_W || y < 0 || y >= PANEL_PAGES * 8) return;
+    s_fb[y / 8][x] |= (uint8_t)(1u << (y % 8));
+}
+
+void swarm_display_vbar(int x, int w, int y_top, int y_bottom) {
+    for (int xx = x; xx < x + w; xx++) {
+        for (int y = y_top; y <= y_bottom; y++) swarm_display_pixel(xx, y);
+    }
+}
+
 esp_err_t swarm_display_flush(void) {
     if (s_dev == NULL) return ESP_ERR_INVALID_STATE;
     uint8_t data[1 + PANEL_W];
@@ -223,6 +234,16 @@ void swarm_display_clear(void) {}
 void swarm_display_row(int row, const char *fmt, ...) {
     (void)row;
     (void)fmt;
+}
+void swarm_display_pixel(int x, int y) {
+    (void)x;
+    (void)y;
+}
+void swarm_display_vbar(int x, int w, int y_top, int y_bottom) {
+    (void)x;
+    (void)w;
+    (void)y_top;
+    (void)y_bottom;
 }
 esp_err_t swarm_display_flush(void) { return ESP_ERR_NOT_SUPPORTED; }
 esp_err_t swarm_display_start(void (*render)(void), uint32_t period_ms) {

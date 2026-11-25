@@ -177,6 +177,38 @@ extern "C" esp_err_t lora_radio_init(lora_chip_t *out_chip) {
 
 lora_chip_t lora_radio_chip(void) { return s_chip; }
 
+extern "C" esp_err_t lora_radio_set_params(const lora_params_t *p) {
+  if (s_radio == nullptr || p == nullptr) return ESP_ERR_INVALID_STATE;
+  if (s_chip != LORA_CHIP_SX1262) return ESP_ERR_NOT_SUPPORTED;
+  auto *r = static_cast<SX1262 *>(s_radio);
+  r->standby();
+  int16_t st = r->setFrequency(p->freq_khz / 1000.0f);
+  if (st == RADIOLIB_ERR_NONE) st = r->setBandwidth((float)p->bw_khz);
+  if (st == RADIOLIB_ERR_NONE) st = r->setSpreadingFactor(p->sf);
+  if (st == RADIOLIB_ERR_NONE) st = r->setCodingRate(p->cr_denom);
+  if (st == RADIOLIB_ERR_NONE) st = r->setSyncWord(p->sync_word);
+  if (st == RADIOLIB_ERR_NONE) st = r->setOutputPower(p->tx_dbm);
+  if (st == RADIOLIB_ERR_NONE) st = r->setCurrentLimit(kSx1262CurrentLimitMa);  // setOutputPower keeps OCP, but be explicit
+  if (st != RADIOLIB_ERR_NONE) {
+    ESP_LOGW(TAG, "set_params %lu kHz / %u kHz / SF%u / CR4:%u / 0x%02x / %d dBm rejected, code %d",
+             (unsigned long)p->freq_khz, p->bw_khz, p->sf, p->cr_denom, p->sync_word, p->tx_dbm, st);
+    return ESP_ERR_INVALID_ARG;
+  }
+  return ESP_OK;
+}
+
+extern "C" uint32_t lora_radio_time_on_air_us(size_t len) {
+  if (s_radio == nullptr) return 0;
+  return (uint32_t)s_radio->getTimeOnAir(len);
+}
+
+extern "C" esp_err_t lora_radio_rssi_now(float *out_dbm) {
+  if (s_radio == nullptr || out_dbm == nullptr) return ESP_ERR_INVALID_STATE;
+  if (s_chip != LORA_CHIP_SX1262) return ESP_ERR_NOT_SUPPORTED;
+  *out_dbm = static_cast<SX1262 *>(s_radio)->getRSSI(false);
+  return ESP_OK;
+}
+
 const lora_profile_t *lora_radio_profile(void) {
   static const lora_profile_t profile = {
       CONFIG_SWARM_RADIO_PROFILE_NAME, CONFIG_SWARM_RADIO_FREQ_KHZ, CONFIG_SWARM_RADIO_BW_KHZ,

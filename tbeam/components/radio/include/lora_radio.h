@@ -105,6 +105,29 @@ lora_chip_t lora_radio_chip(void);
 /** The profile this build transmits and listens on (valid before init). */
 const lora_profile_t *lora_radio_profile(void);
 
+/* ---- Runtime reconfiguration (bench and field tests, apps/radio_lab) ----
+ * The node apps never call these: the mesh profile is a build constant.
+ * SX1262 only; ESP_ERR_NOT_SUPPORTED on an SX1278. The caller enforces band
+ * and airtime rules; these only reject what the chip itself rejects. */
+typedef struct {
+    uint32_t freq_khz;
+    uint16_t bw_khz;     /* 7.8 kHz and up are rounded to the chip's steps; use 125/250/500 */
+    uint8_t sf;          /* 5-12 */
+    uint8_t cr_denom;    /* 5-8 = CR 4:5 .. 4:8 */
+    uint8_t sync_word;   /* 1-byte LoRa sync word, 0x12 private, 0x34 LoRaWAN public */
+    int8_t tx_dbm;       /* -9 .. +22 */
+} lora_params_t;
+
+/** Apply all parameters (radio goes to standby; call lora_radio_rx_start()
+ * afterwards to listen). */
+esp_err_t lora_radio_set_params(const lora_params_t *p);
+
+/** Time on air of a len-byte packet at the current parameters (RadioLib). */
+uint32_t lora_radio_time_on_air_us(size_t len);
+
+/** Instantaneous RSSI of the channel, dBm; the radio must be receiving. */
+esp_err_t lora_radio_rssi_now(float *out_dbm);
+
 #ifdef __cplusplus
 }
 #endif
