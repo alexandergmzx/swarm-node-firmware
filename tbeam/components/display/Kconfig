@@ -1,0 +1,15 @@
+menu "Swarm display"
+
+    config SWARM_DISPLAY
+        bool "Onboard OLED status screen"
+        default y
+        help
+            Shows the node's state on the 128x64 OLED (SSD1306 on the
+            classic T-Beam, SH1106 on the S3 Supreme): role, node id, band
+            profile, GPS, TX/RX counters, sensors and supply voltage, redrawn
+            once a second from a Core 1 task below the sensor tasks.
+            On by default for bench builds. A field build turns it off
+            (about 10 mA when lit; proposal 3.5 keeps the OLED dark in the
+            field): with it off no display code is linked.
+
+endmenu
