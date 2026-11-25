@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-# M1 bring-up diagnostic (ADR 0027/0028) — esp32 only, one-off tool, NOT
+# M1 bring-up diagnostic (ADR 0027/0028) — esp32 and esp32s3, one-off tool, NOT
 # part of the shipped satellite/receiver pair. Confirms per-board radio
 # identity, PMU identity, I2C wiring, and NMEA/PPS presence before the real
 # satellite firmware trusts board_pins.h's candidate values.

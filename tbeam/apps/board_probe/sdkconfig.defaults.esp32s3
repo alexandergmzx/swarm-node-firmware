@@ -1,0 +1,6 @@
+# T-Beam S3 Supreme: console on the native USB-Serial-JTAG port (/dev/ttyACM*),
+# 8 MB embedded flash. An S3 build also needs a band overlay
+# (../../profiles/band-433.defaults or band-915.defaults).
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_BOARD_PROBE_START_DELAY_S=5

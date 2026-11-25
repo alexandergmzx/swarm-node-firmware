@@ -1,0 +1,4 @@
+# Classic T-Beam: 4 MB flash (esptool flash_id, 2026-09-03); without this the
+# bootloader warns it is using a 2 MB image header on a 4 MB part.
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y

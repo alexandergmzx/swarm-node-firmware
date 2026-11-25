@@ -1,0 +1,4 @@
+# Identity pass on a board whose antenna or band is not yet confirmed:
+# the probe reads PMU, buses, radio identity and NMEA, and transmits nothing.
+# Add after the band overlay: "sdkconfig.defaults;../../profiles/band-915.defaults;identity-pass.defaults".
+CONFIG_BOARD_PROBE_LINK_TEST=n

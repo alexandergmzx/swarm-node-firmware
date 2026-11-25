@@ -1,9 +1,11 @@
 /* SPDX-License-Identifier: MIT
  *
  * M1 bring-up diagnostic (Step 4, ADR 0027/0028). Reports, once, what is
- * actually wired on a classic satellite: PMU identity and rails, I2C scan,
- * radio identity, and NMEA (plus PPS edges on a board that routes them —
- * the classic does not). Not the shipped satellite firmware; a throwaway
+ * actually wired on a classic T-Beam or a T-Beam S3 Supreme: PMU identity and
+ * rails, I2C scan, radio identity at the build's interop profile, and NMEA
+ * (baud rate, plus PPS edges on a board that routes them — the classic does
+ * not). CONFIG_BOARD_PROBE_LINK_TEST=n makes it a pass that never transmits.
+ * Not the shipped satellite firmware; a throwaway
  * tool whose output goes verbatim into hardware/bringup-log.md.
  *
  * The AXP2101 is brought up first through components/pmu: the radio and the
@@ -90,12 +92,22 @@ static void scan_i2c(i2c_master_bus_handle_t bus) {
             printf("  0x%02x ACKed%s\n", addr, known);
         }
     }
+#if CONFIG_IDF_TARGET_ESP32
     printf("  expected on a classic without the kit wired: 0x%02x, 0x%02x; with the kit: + 0x%02x, 0x%02x\n",
            SWARM_I2C_ADDR_PMU, SWARM_I2C_ADDR_OLED, SWARM_I2C_ADDR_SCD30, SWARM_I2C_ADDR_BME688);
+#else
+    printf("  expected on an S3 Supreme (PMU and RTC sit on the other bus, IO42/IO41): onboard OLED 0x%02x,\n"
+           "  BME280 0x77, magnetometer 0x1c (QMC6310U; 0x3c QMC6310N, 0x7c QMC6309); the IMU is on SPI;\n"
+           "  with the kit: + 0x%02x, 0x%02x\n",
+           SWARM_I2C_ADDR_OLED, SWARM_I2C_ADDR_SCD30, SWARM_I2C_ADDR_BME688);
+#endif
 }
 
 static void probe_radio(void) {
-    printf("--- LoRa radio probe (433.175 MHz profile, RST=%d) ---\n", SWARM_PIN_LORA_RST);
+    const lora_profile_t *prof = lora_radio_profile();
+    printf("--- LoRa radio probe (profile %s: %lu.%03lu MHz / %u kHz / SF%u / %+d dBm, RST=%d) ---\n",
+           prof->name, (unsigned long)(prof->freq_khz / 1000), (unsigned long)(prof->freq_khz % 1000),
+           prof->bw_khz, prof->sf, prof->tx_dbm, SWARM_PIN_LORA_RST);
     lora_chip_t chip = LORA_CHIP_UNKNOWN;
     esp_err_t err = lora_radio_init(&chip);
     if (err == ESP_OK) {
@@ -181,14 +193,27 @@ static void echo_nmea_and_count_pps(void) {
         printf("\n");
     }
     if (lines_seen == 0) {
-        printf("  no NMEA at all — with ALDO3 on this contradicts the schematic: check GPS_RX=%d/GPS_TX=%d\n",
+        // gps_time assumes 9600 (the L76K and MAX-M10S factory default); a
+        // module whose saved configuration says otherwise shows up here.
+        static const int bauds[] = {38400, 115200, 4800};
+        for (size_t b = 0; b < sizeof(bauds) / sizeof(bauds[0]); b++) {
+            uart_set_baudrate(UART_NUM_1, bauds[b]);
+            uart_flush_input(UART_NUM_1);
+            int dollars = 0;
+            int64_t t0 = esp_timer_get_time();
+            while ((esp_timer_get_time() - t0) < 3 * 1000 * 1000) {
+                uint8_t byte;
+                if (uart_read_bytes(UART_NUM_1, &byte, 1, pdMS_TO_TICKS(200)) > 0 && byte == '$') dollars++;
+            }
+            printf("  baud scan: %d '$' sentence starts in 3 s at %d baud\n", dollars, bauds[b]);
+        }
+        printf("  no NMEA at 9600 — with the GNSS rail on this contradicts the schematic: check GPS_RX=%d/GPS_TX=%d\n",
                SWARM_PIN_GPS_RX, SWARM_PIN_GPS_TX);
     }
 }
 
 /* Bench / range link test: sixty tagged frames, one per second, at the
- * configured TX power (CONFIG_SWARM_TX_POWER_DBM: +2 dBm lab floor, +8 dBm
- * EU field profile — ADR 0031). The receiver prints each as
+ * configured TX power (CONFIG_SWARM_TX_POWER_DBM, default +2 dBm; ADR 0031). The receiver prints each as
  * `RX <rssi> <snr> <hex>`; the hex starts with a5 5a 4c 4e 4b ("LNK") then
  * the sequence number and this chip's MAC tail, so the two consoles can be
  * matched frame by frame. Sixty, not ten: 0 lost of 10 only bounds the loss
@@ -197,7 +222,7 @@ static void echo_nmea_and_count_pps(void) {
  * Antennas must be fitted on both boards before this runs. */
 #define LINK_TEST_FRAMES 60
 
-static void link_test_tx(void) {
+__attribute__((unused)) static void link_test_tx(void) {
     printf("--- LoRa link test: %d frames, 1/s, %+d dBm ---\n", LINK_TEST_FRAMES,
            CONFIG_SWARM_TX_POWER_DBM);
     if (lora_radio_chip() == LORA_CHIP_UNKNOWN) {
@@ -219,7 +244,11 @@ static void link_test_tx(void) {
 }
 
 void app_main(void) {
-    printf("\n=== swarm board_probe (%s) ===\n\n", SWARM_BOARD_NAME);
+    for (int s = CONFIG_BOARD_PROBE_START_DELAY_S; s > 0; s--) {
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+    printf("\n=== swarm board_probe (%s, radio profile %s) ===\n\n", SWARM_BOARD_NAME,
+           lora_radio_profile()->name);
     i2c_master_bus_handle_t bus = open_sensor_bus();
     if (bus != NULL) {
         bring_up_pmu(bus);   // on the classic the PMU shares this bus; on the S3 pmu opens its own
@@ -229,7 +258,11 @@ void app_main(void) {
     }
     probe_radio();
     echo_nmea_and_count_pps();
+#if CONFIG_BOARD_PROBE_LINK_TEST
     link_test_tx();
+#else
+    printf("--- LoRa link test: off in this build (CONFIG_BOARD_PROBE_LINK_TEST=n) — nothing was transmitted ---\n");
+#endif
     printf("\n=== done — copy these lines into hardware/bringup-log.md ===\n");
 
     while (1) {

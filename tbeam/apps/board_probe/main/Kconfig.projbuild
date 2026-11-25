@@ -1,0 +1,18 @@
+menu "Board probe"
+
+    config BOARD_PROBE_LINK_TEST
+        bool "Transmit the 60-frame link test at the end"
+        default y
+        help
+            Off for an identity pass on a board whose antenna or band is
+            not yet confirmed: the probe then never transmits.
+
+    config BOARD_PROBE_START_DELAY_S
+        int "Seconds to wait before the first line"
+        range 0 30
+        default 0
+        help
+            Gives a USB-Serial-JTAG console time to attach after a reset,
+            so the first boot's output (as-found PMU rails) is not lost.
+
+endmenu
