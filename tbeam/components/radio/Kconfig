@@ -1,21 +1,90 @@
 menu "Swarm radio profile"
 
+    choice SWARM_RADIO_PROFILE
+        prompt "Interop profile (every node of one mesh must match)"
+        default SWARM_RADIO_PROFILE_433 if IDF_TARGET_ESP32
+        default SWARM_RADIO_PROFILE_UNSET
+        help
+            The radio profile is a property of the board's RF front end,
+            and firmware cannot read it: the 433 MHz and the 915 MHz T-Beam
+            S3 Supreme are both an ESP32-S3 with an SX1262. So an esp32s3
+            build has no default and stops at compile time until an
+            overlay names the band:
+              ../../profiles/band-433.defaults  (433 MHz Supreme)
+              ../../profiles/band-915.defaults  (915 MHz Supreme)
+            The classic T-Beam (esp32) carries an SX1278, which cannot go
+            above 525 MHz, so it defaults to 433 and refuses 915.
+
+        config SWARM_RADIO_PROFILE_UNSET
+            bool "not selected (the build stops)"
+            depends on !IDF_TARGET_ESP32
+
+        config SWARM_RADIO_PROFILE_433
+            bool "433-LAB: 433.175 MHz / 125 kHz / SF7 (ADR 0031)"
+            help
+                EU short-range-device band 433.050-434.790 MHz (CNAF note
+                UN-30 / ERC/REC 70-03 Annex 1 h1.1: 10 mW e.r.p., <= 10 %
+                duty). Indoors only where 433 MHz is not a free-use band.
+
+        config SWARM_RADIO_PROFILE_915
+            bool "915-MX: 916.700 MHz / 500 kHz / SF9 (Mexico, 902-928 MHz)"
+            help
+                One fixed 500 kHz channel, which is the digital-modulation
+                class of IFT-008-2015 section 4.3: a 6 dB bandwidth of at
+                least 500 kHz, at most 1 W peak, at most 8 dBm in any 3 kHz,
+                and 4 W EIRP. A fixed 125 kHz channel fits no class of that
+                provision (hopping needs more than 50 channels). The
+                916.7 MHz centre avoids the LoRaWAN US915 uplink and downlink
+                channels and the Meshtastic US defaults. It is provisional
+                until a noise scan confirms it. SX1262 boards only.
+
+    endchoice
+
+    config SWARM_RADIO_PROFILE_NAME
+        string
+        default "433-LAB" if SWARM_RADIO_PROFILE_433
+        default "915-MX" if SWARM_RADIO_PROFILE_915
+        default "UNSET"
+
+    # Promptless: shown in sdkconfig for the record, never set by an overlay.
+    config SWARM_RADIO_FREQ_KHZ
+        int
+        default 433175 if SWARM_RADIO_PROFILE_433
+        default 916700 if SWARM_RADIO_PROFILE_915
+        default 0
+
+    config SWARM_RADIO_BW_KHZ
+        int
+        default 500 if SWARM_RADIO_PROFILE_915
+        default 125
+
+    config SWARM_RADIO_SF
+        int
+        default 9 if SWARM_RADIO_PROFILE_915
+        default 7
+
     config SWARM_TX_POWER_DBM
         int "LoRa TX power (dBm)"
+        range -9 22 if SWARM_RADIO_PROFILE_915
         range 2 10
         default 2
         help
-            The one site-dependent value of the interop profile (ADR 0031).
-            2 dBm is the lab floor: the SX1278's PA_BOOST minimum in
-            RadioLib, radiated indoors only where 433 MHz is not a
-            free-use band (ADR 0031 decision 2). The EU field profile
-            (ADR 0031 amendment, 2026-09-05) builds with 8: e.r.p. = P_tx + G_dBd stays at or
-            below 10 mW (10 dBm) for whips up to about 4 dBi, inside CNAF
-            note UN-30 / ERC/REC 70-03 Annex 1 h1.1 (433.050-434.790 MHz,
-            10 mW e.r.p., <= 10 % duty). The range stops at 10 so no build
-            exceeds the EU limit even with a 0 dBd antenna. Frequency,
-            bandwidth, SF and coding rate stay constants in lora_radio.cpp:
-            the mesh must agree on them, and SF9+ breaks the +/-200 ms
-            clock fallback (ADR 0016).
+            The one site-dependent value of the interop profile.
+
+            433-LAB: 2 dBm is the lab floor (the SX1278's PA_BOOST minimum
+            in RadioLib). The EU field profile (ADR 0031 amendment) builds
+            with 8: e.r.p. = P_tx + G_dBd stays at or below 10 mW for whips
+            up to about 4 dBi. The range stops at 10 so that no build
+            exceeds the EU limit, even with a 0 dBd antenna.
+
+            915-MX: the SX1262 range is -9 to +22 dBm. At +22 dBm over
+            500 kHz the density is about -0.2 dBm per 3 kHz, inside the
+            8 dBm limit; with an antenna of at most 6 dBi the EIRP stays
+            under 4 W. The default stays 2 dBm for the bench.
+
+            Frequency, bandwidth, SF and coding rate come from the profile
+            choice above, because the mesh must agree on them. The TDMA task
+            checks at compile time that the clock-fallback transmission
+            still fits its slot at the chosen profile (ADR 0016).
 
 endmenu

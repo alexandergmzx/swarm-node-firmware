@@ -18,17 +18,27 @@ static const char *TAG = "lora_radio";
 
 // Interop profile shared by every node on the mesh (ADR 0016 / ADR 0029 /
 // ADR 0031). Both radios must agree on all of these; this is the one place
-// they are named.
+// they are named. Frequency, bandwidth and SF come from the profile choice in
+// Kconfig (433-LAB or 915-MX); an esp32s3 build without a band overlay stops
+// here, because firmware cannot tell a 433 MHz Supreme from a 915 MHz one.
+#if CONFIG_SWARM_RADIO_PROFILE_UNSET
+#error "No radio profile: add ../../profiles/band-433.defaults or ../../profiles/band-915.defaults to SDKCONFIG_DEFAULTS"
+#elif CONFIG_SWARM_RADIO_PROFILE_915 && CONFIG_IDF_TARGET_ESP32
+#error "915-MX profile on esp32: the classic T-Beam's SX1278 stops at 525 MHz"
+#endif
 namespace {
-constexpr float kFreqMHz = 433.175f;      // lab phase: every board on hand is a 433 MHz variant (ADR 0031)
-constexpr float kBandwidthKHz = 125.0f;
-constexpr uint8_t kSpreadingFactor = 7;
+constexpr float kFreqMHz = CONFIG_SWARM_RADIO_FREQ_KHZ / 1000.0f;
+constexpr float kBandwidthKHz = CONFIG_SWARM_RADIO_BW_KHZ;
+constexpr uint8_t kSpreadingFactor = CONFIG_SWARM_RADIO_SF;
 constexpr uint8_t kCodingRateDenom = 5;   // CR 4:5, RadioLib's "cr" is the denominator
 constexpr uint8_t kSyncWord = 0x12;       // private — RadioLib translates this for SX126x internally
-constexpr int8_t kTxPowerDbm = CONFIG_SWARM_TX_POWER_DBM;  // 2 = lab floor, indoors (ADR 0031 decision 2);
-                                                          // 8 = EU field profile (ADR 0031 amendment) — Kconfig
+constexpr int8_t kTxPowerDbm = CONFIG_SWARM_TX_POWER_DBM;  // 2 = bench default; range per profile in Kconfig
 constexpr uint16_t kPreambleSymbols = 8;
 constexpr float kSx1262TcxoVoltage = 1.8f;
+// SX1262 over-current protection. RadioLib's begin() leaves 60 mA, which
+// clips the PA well below +22 dBm; LilyGO's factory sketch and Meshtastic
+// both set 140 mA, the datasheet value for the SX1262's high-power PA.
+constexpr float kSx1262CurrentLimitMa = 140.0f;
 }  // namespace
 
 static EspHal *s_hal = nullptr;
@@ -53,7 +63,7 @@ static void IRAM_ATTR rx_isr(void) {
 // classic T-Beam's HPD14A module carries. RadioLib's SX1278 class rejects
 // anything above 525 MHz, so it also enforces that the profile stays inside
 // the band the module is matched for.
-static esp_err_t try_sx1278() {
+[[maybe_unused]] static esp_err_t try_sx1278() {
   s_module = new Module(s_hal, SWARM_PIN_LORA_CS, SWARM_PIN_LORA_DIO0,
                          SWARM_PIN_LORA_RST, SWARM_PIN_LORA_DIO1);
   auto *sx1278 = new SX1278(s_module);
@@ -94,6 +104,10 @@ static esp_err_t try_sx1262() {
   }
   // DIO2-as-RF-switch + the TCXO voltage above match LilyGO's SX1262 module
   // glue (Meshtastic variant.h; ADR 0028).
+  int16_t ocp = sx1262->setCurrentLimit(kSx1262CurrentLimitMa);
+  if (ocp != RADIOLIB_ERR_NONE) {
+    ESP_LOGW(TAG, "SX1262: setCurrentLimit(%.0f mA) failed with code %d", kSx1262CurrentLimitMa, ocp);
+  }
   int16_t rf_switch = sx1262->setDio2AsRfSwitch(true);
   if (rf_switch != RADIOLIB_ERR_NONE) {
     ESP_LOGW(TAG, "SX1262: setDio2AsRfSwitch failed with code %d — TX may fail into an open switch",
@@ -115,6 +129,13 @@ extern "C" esp_err_t lora_radio_init(lora_chip_t *out_chip) {
     return ESP_ERR_NO_MEM;
   }
 
+  // Printed before the probe so it shows even when no radio answers: the
+  // band is a build choice the board cannot confirm, and a wrong-band build
+  // on a node looks like silence, not like an error.
+  ESP_LOGW(TAG, "PROFILE %s: %.3f MHz / %d kHz / SF%u / CR4:%u / sync 0x%02x / %+d dBm / 26 B = %.1f ms on air",
+           CONFIG_SWARM_RADIO_PROFILE_NAME, kFreqMHz, CONFIG_SWARM_RADIO_BW_KHZ, kSpreadingFactor,
+           kCodingRateDenom, kSyncWord, kTxPowerDbm, LORA_RADIO_AIRTIME_US(26) / 1000.0);
+
   s_hal = new EspHal(SWARM_PIN_LORA_SCK, SWARM_PIN_LORA_MISO, SWARM_PIN_LORA_MOSI);
 
   // The expected part goes first (RadioLib's begin() does the RegVersion /
@@ -126,6 +147,10 @@ extern "C" esp_err_t lora_radio_init(lora_chip_t *out_chip) {
     ESP_LOGW(TAG, "SX1278 not found (rail on? RST=%d?), probing SX1262 as a guard", SWARM_PIN_LORA_RST);
     err = try_sx1262();
   }
+#elif CONFIG_SWARM_RADIO_PROFILE_915
+  // No SX1278 guard: the SX1278 class rejects 916.7 MHz, so the guard could
+  // only ever report a misleading "begin() failed".
+  esp_err_t err = try_sx1262();
 #else
   esp_err_t err = try_sx1262();
   if (err != ESP_OK) {
@@ -139,15 +164,24 @@ extern "C" esp_err_t lora_radio_init(lora_chip_t *out_chip) {
   }
 
   s_radio->setPacketReceivedAction(rx_isr);
-  ESP_LOGI(TAG, "radio up: %s at %.3f MHz / SF%u / CR4:%u / sync 0x%02x / %d dBm",
+  ESP_LOGI(TAG, "radio up: %s at %.3f MHz / %d kHz / SF%u / CR4:%u / sync 0x%02x / %d dBm (%s)",
            s_chip == LORA_CHIP_SX1278 ? "SX1278" : "SX1262",
-           kFreqMHz, kSpreadingFactor, kCodingRateDenom, kSyncWord, kTxPowerDbm);
+           kFreqMHz, CONFIG_SWARM_RADIO_BW_KHZ, kSpreadingFactor, kCodingRateDenom, kSyncWord,
+           kTxPowerDbm, CONFIG_SWARM_RADIO_PROFILE_NAME);
 
   if (out_chip) *out_chip = s_chip;
   return ESP_OK;
 }
 
 lora_chip_t lora_radio_chip(void) { return s_chip; }
+
+const lora_profile_t *lora_radio_profile(void) {
+  static const lora_profile_t profile = {
+      CONFIG_SWARM_RADIO_PROFILE_NAME, CONFIG_SWARM_RADIO_FREQ_KHZ, CONFIG_SWARM_RADIO_BW_KHZ,
+      kSpreadingFactor, kCodingRateDenom, kSyncWord, kPreambleSymbols, kTxPowerDbm,
+  };
+  return &profile;
+}
 
 esp_err_t lora_radio_tx(const uint8_t *data, size_t len) {
   if (s_radio == nullptr) return ESP_ERR_INVALID_STATE;

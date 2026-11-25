@@ -1,0 +1,4 @@
+# Band overlay for a 915 MHz T-Beam S3 Supreme (Mexico, 902-928 MHz, 500 kHz / SF9).
+# Add it last in SDKCONFIG_DEFAULTS: "sdkconfig.defaults;...;../../profiles/band-915.defaults".
+# The classic T-Beam (esp32, SX1278) cannot take it: the build stops with an #error.
+CONFIG_SWARM_RADIO_PROFILE_915=y

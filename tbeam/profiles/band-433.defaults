@@ -1,0 +1,3 @@
+# Band overlay for a 433 MHz T-Beam (the classic defaults to it; a 433 MHz S3 Supreme needs it).
+# Add it last in SDKCONFIG_DEFAULTS: "sdkconfig.defaults;...;../../profiles/band-433.defaults".
+CONFIG_SWARM_RADIO_PROFILE_433=y
