@@ -86,7 +86,13 @@ static void scan_i2c(i2c_master_bus_handle_t bus) {
         if (i2c_master_probe(bus, addr, I2C_XFER_TIMEOUT_MS) == ESP_OK) {
             const char *known = "";
             if (addr == SWARM_I2C_ADDR_PMU) known = " (PMU AXP2101)";
+#if CONFIG_IDF_TARGET_ESP32
             else if (addr == SWARM_I2C_ADDR_OLED) known = " (OLED — SSD1306 on the classics, fitted on both units)";
+#else
+            else if (addr == SWARM_I2C_ADDR_OLED) known = " (onboard OLED — SH1106; a QMC6310N magnetometer would also answer here)";
+            else if (addr == 0x1c) known = " (magnetometer QMC6310U)";
+            else if (addr == 0x77) known = " (onboard BME280)";
+#endif
             else if (addr == SWARM_I2C_ADDR_SCD30) known = " (SCD30)";
             else if (addr == SWARM_I2C_ADDR_BME688) known = " (BME688)";
             printf("  0x%02x ACKed%s\n", addr, known);
