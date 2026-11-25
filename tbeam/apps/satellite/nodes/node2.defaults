@@ -1,0 +1,5 @@
+# Per-unit provisioning overlay (ADR 0016 slot = node_id). Build with
+#   idf.py -B build-node2 -DSDKCONFIG=build-node2/sdkconfig \
+#          -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;nodes/node2.defaults" -DIDF_TARGET=<esp32|esp32s3> build
+# (ESP-IDF applies sdkconfig.defaults.<target> after each listed file.)
+CONFIG_SWARM_NODE_ID=2

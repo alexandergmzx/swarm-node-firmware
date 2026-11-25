@@ -1,0 +1,5 @@
+# T-Beam S3 Supreme as a satellite — the deferred all-Supreme fleet
+# (backlog 0030), kept buildable so the app never bit-rots against that
+# target even though the phase fleet runs it only as the receiver (ADR 0027).
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y

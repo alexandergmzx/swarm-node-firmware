@@ -1,0 +1,7 @@
+# T-Beam S3 Supreme — the phase fleet's receiver (ADR 0027).
+# The tether contract (protocols/specs/messages.md) is USB CDC-ACM,
+# /dev/ttyACM* — the S3's native USB-Serial-JTAG peripheral.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+# 8 MB embedded flash (esptool flash_id, 2026-09-03); without this the
+# bootloader warns it is using a 2 MB image header on an 8 MB part.
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y

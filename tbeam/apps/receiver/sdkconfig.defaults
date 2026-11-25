@@ -1,0 +1,10 @@
+# Common defaults (ADR 0028). RadioLib's EspHal hard-errors below 1000 Hz —
+# see third_party/RadioLib's [ESP-IDF] commit history for why.
+CONFIG_FREERTOS_HZ=1000
+CONFIG_ESP_TASK_WDT_INIT=y
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=10
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_COMPILER_WARN_WRITE_STRINGS=y
+
+# Console and flash size are per target: sdkconfig.defaults.esp32s3 (the S3 Supreme,
+# USB-Serial-JTAG tether) and sdkconfig.defaults.esp32 (a classic as a spare receiver).

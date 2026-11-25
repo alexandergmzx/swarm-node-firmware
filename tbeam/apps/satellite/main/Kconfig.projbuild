@@ -1,0 +1,22 @@
+menu "Swarm satellite configuration"
+
+    config SWARM_NODE_ID
+        int "TDMA node_id (1-9 assigned satellite slots; 15 = unprovisioned)"
+        range 1 15
+        default 15
+        help
+            Per-unit provisioning (ADR 0027). 15 is the unprovisioned
+            sentinel: the TDMA task refuses to transmit at node_id 15,
+            mechanically enforcing protocols/specs/messages.md's node_id
+            allocation table ("a 15 on air is a provisioning bug"). Flash
+            each satellite with its own value.
+
+    config SWARM_I2C_FREQ_HZ
+        int "I2C bus clock (Hz)"
+        default 50000
+        help
+            One bus carries the PMU (0x34), SCD30 (0x61) and BME688 (0x76).
+            Sensirion's SCD30 interface description (sec 1.1) recommends
+            <= 50 kHz even though the part's own spec allows up to 100 kHz.
+
+endmenu

@@ -1,0 +1,21 @@
+menu "Swarm radio profile"
+
+    config SWARM_TX_POWER_DBM
+        int "LoRa TX power (dBm)"
+        range 2 10
+        default 2
+        help
+            The one site-dependent value of the interop profile (ADR 0031).
+            2 dBm is the lab floor: the SX1278's PA_BOOST minimum in
+            RadioLib, radiated indoors only in Monterrey (ADR 0031
+            decision 2). The Madrid field profile (ADR 0031 amendment,
+            2026-09-05) builds with 8: e.r.p. = P_tx + G_dBd stays at or
+            below 10 mW (10 dBm) for whips up to about 4 dBi, inside CNAF
+            note UN-30 / ERC/REC 70-03 Annex 1 h1.1 (433.050-434.790 MHz,
+            10 mW e.r.p., <= 10 % duty). The range stops at 10 so no build
+            exceeds the EU limit even with a 0 dBd antenna. Frequency,
+            bandwidth, SF and coding rate stay constants in lora_radio.cpp:
+            the mesh must agree on them, and SF9+ breaks the +/-200 ms
+            clock fallback (ADR 0016).
+
+endmenu

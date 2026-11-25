@@ -1,0 +1,6 @@
+# Classic T-Beam as a receiver — a spare, and the other half of the "swap test"
+# that lets the S3 Supreme run the satellite build against a real RX side
+# (bring-up plan, 2026-09-03). The tether lines come out of UART0 through the
+# CP210x/CH9102 bridge (/dev/ttyUSB* or /dev/ttyACM*), same format.
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y

@@ -1,0 +1,12 @@
+# Common defaults (ADR 0028). RadioLib's EspHal hard-errors below 1000 Hz.
+CONFIG_FREERTOS_HZ=1000
+CONFIG_ESP_TASK_WDT_INIT=y
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=10
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_COMPILER_WARN_WRITE_STRINGS=y
+
+# I2C (PMU + SCD30 + BME688 share one bus): stay at 50 kHz per Sensirion's
+# recommendation for the SCD30 (its own spec allows up to 100 kHz, but 30 ms
+# typical / 150 ms worst-case clock stretching during its internal
+# calibration is easier to tolerate at the lower rate).
+CONFIG_SWARM_I2C_FREQ_HZ=50000
