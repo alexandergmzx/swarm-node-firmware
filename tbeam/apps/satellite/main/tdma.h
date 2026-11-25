@@ -33,6 +33,7 @@ typedef struct {
     uint32_t tx_fail;      /* lora_radio_tx() errors */
     uint32_t skipped;      /* superframes skipped: clock error over budget */
     int64_t last_tx_us;    /* esp_timer time of the last good TX, -1 = none */
+    int64_t first_tx_us;   /* esp_timer time of the first good TX, -1 = none */
 } swarm_tdma_stats_t;
 
 void swarm_tdma_get_stats(swarm_tdma_stats_t *out);

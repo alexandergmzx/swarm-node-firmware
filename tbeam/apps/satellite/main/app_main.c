@@ -31,7 +31,10 @@ static const char *TAG = "satellite";
  *   SX1262 916.700 +2dBm     radio, frequency, TX power
  *   GPS NMEA +-37ms          time source and error bound, or "waiting"
  *   25.68661 -100.31611      position, or "no position"
- *   TX 42  3s ago  sk 0      frames sent, age of the last, skipped slots
+ *   TX 42 3s air 0.57%       frames sent, age of the last, airtime share
+ *                            (frames x computed time on air / time since the
+ *                            first TX; "sk N" replaces the age when slots
+ *                            were skipped)
  *   PM2.5 12.3  CO2 612      Core 1 sensor values ("--" when stale)
  *   T 24.1C  RH 45%          BME688
  *   vbus 5.08V  bat --       AXP2101 */
@@ -65,8 +68,17 @@ static void render_status(void) {
     } else if (st.last_tx_us < 0) {
         swarm_display_row(4, "TX none yet  sk %lu", (unsigned long)st.skipped);
     } else {
-        long age_s = (long)((esp_timer_get_time() - st.last_tx_us) / 1000000);
-        swarm_display_row(4, "TX %lu %lds ago sk %lu", (unsigned long)st.tx_ok, age_s, (unsigned long)st.skipped);
+        int64_t now = esp_timer_get_time();
+        long age_s = (long)((now - st.last_tx_us) / 1000000);
+        /* Airtime share: one superframe's worth of wall time per frame at the
+         * start, so the first frame does not read as 100 %. */
+        int64_t span_us = (now - st.first_tx_us) + 5000000;
+        double air_pct = 100.0 * (double)st.tx_ok * LORA_RADIO_AIRTIME_US(26) / (double)span_us;
+        if (st.skipped > 0) {
+            swarm_display_row(4, "TX %lu sk %lu air%.2f%%", (unsigned long)st.tx_ok, (unsigned long)st.skipped, air_pct);
+        } else {
+            swarm_display_row(4, "TX %lu %lds air %.2f%%", (unsigned long)st.tx_ok, age_s, air_pct);
+        }
     }
 
     sensor_bundle_t b;

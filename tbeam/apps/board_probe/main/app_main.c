@@ -283,7 +283,8 @@ __attribute__((unused)) static void link_test_tx(void) {
         int64_t t0 = esp_timer_get_time();
         esp_err_t err = lora_radio_tx(frame, sizeof(frame));
         int64_t airtime_us = esp_timer_get_time() - t0;
-        screen(5, "link TX %u/%d %s", seq, LINK_TEST_FRAMES, err == ESP_OK ? "ok" : "ERR");
+        screen(5, "TX %u/%d %s air%.2f%%", seq, LINK_TEST_FRAMES, err == ESP_OK ? "ok" : "ERR",
+               LORA_RADIO_AIRTIME_US(LINK_TEST_FRAME_BYTES) / 10.0 / LINK_TEST_PERIOD_MS);
         printf("  TX seq %u: %s (%lld ms on air)\n", seq, err == ESP_OK ? "ok" : esp_err_to_name(err),
                (long long)(airtime_us / 1000));
         vTaskDelay(pdMS_TO_TICKS(LINK_TEST_PERIOD_MS));

@@ -37,7 +37,7 @@ _Static_assert((uint64_t)LORA_RADIO_AIRTIME_US(SWARM_RAW_SENSOR_SIZE) * 1000u <=
                "one RAW_SENSOR frame per superframe exceeds the profile's airtime ceiling");
 
 static portMUX_TYPE s_stats_lock = portMUX_INITIALIZER_UNLOCKED;
-static swarm_tdma_stats_t s_stats = {.last_tx_us = -1};
+static swarm_tdma_stats_t s_stats = {.last_tx_us = -1, .first_tx_us = -1};
 
 void swarm_tdma_get_stats(swarm_tdma_stats_t *out) {
     portENTER_CRITICAL(&s_stats_lock);
@@ -149,6 +149,7 @@ static void tdma_task(void *arg) {
         if (err == ESP_OK) {
             s_stats.tx_ok++;
             s_stats.last_tx_us = esp_timer_get_time();
+            if (s_stats.first_tx_us < 0) s_stats.first_tx_us = s_stats.last_tx_us;
         } else {
             s_stats.tx_fail++;
         }
