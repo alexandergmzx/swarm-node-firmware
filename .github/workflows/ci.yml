@@ -6,18 +6,26 @@ on:
 
 jobs:
   build:
-    name: ${{ matrix.app }} / ${{ matrix.target }}
+    name: ${{ matrix.app }} / ${{ matrix.target }} / ${{ matrix.band }}
     runs-on: ubuntu-latest
     container: espressif/idf:v5.4.1
     strategy:
       fail-fast: false
       matrix:
+        # expect: the CONFIG_SWARM_RADIO_FREQ_KHZ the build must produce, or
+        # FAIL for a combination that must not build.
         include:
-          - { app: satellite, target: esp32 }
-          - { app: satellite, target: esp32s3 }
-          - { app: receiver, target: esp32s3 }
-          - { app: receiver, target: esp32 }
-          - { app: board_probe, target: esp32 }
+          - { app: satellite,   target: esp32,   band: 433, defaults: "sdkconfig.defaults;nodes/node1.defaults", expect: "433175" }
+          - { app: satellite,   target: esp32s3, band: 433, defaults: "sdkconfig.defaults;nodes/node3.defaults;../../profiles/band-433.defaults", expect: "433175" }
+          - { app: satellite,   target: esp32s3, band: 915, defaults: "sdkconfig.defaults;nodes/node4.defaults;../../profiles/band-915.defaults", expect: "916700" }
+          - { app: receiver,    target: esp32,   band: 433, defaults: "sdkconfig.defaults", expect: "433175" }
+          - { app: receiver,    target: esp32s3, band: 433, defaults: "sdkconfig.defaults;../../profiles/band-433.defaults", expect: "433175" }
+          - { app: receiver,    target: esp32s3, band: 915, defaults: "sdkconfig.defaults;../../profiles/band-915.defaults", expect: "916700" }
+          - { app: board_probe, target: esp32,   band: 433, defaults: "sdkconfig.defaults", expect: "433175" }
+          - { app: board_probe, target: esp32s3, band: 433, defaults: "sdkconfig.defaults;../../profiles/band-433.defaults", expect: "433175" }
+          - { app: board_probe, target: esp32s3, band: 915, defaults: "sdkconfig.defaults;../../profiles/band-915.defaults", expect: "916700" }
+          - { app: receiver,    target: esp32s3, band: none, defaults: "sdkconfig.defaults", expect: "FAIL" }
+          - { app: receiver,    target: esp32,   band: 915, defaults: "sdkconfig.defaults;../../profiles/band-915.defaults", expect: "FAIL" }
     steps:
       - uses: actions/checkout@v4
       - name: Fetch the vendored libraries
@@ -31,5 +39,20 @@ jobs:
         run: |
           . $IDF_PATH/export.sh
           cd tbeam/apps/${{ matrix.app }}
-          idf.py set-target ${{ matrix.target }}
-          idf.py build
+          if idf.py -B build -DSDKCONFIG=$PWD/build/sdkconfig \
+               -DSDKCONFIG_DEFAULTS="${{ matrix.defaults }}" -DIDF_TARGET=${{ matrix.target }} build; then
+            test "${{ matrix.expect }}" != FAIL || { echo "::error::this combination must not build"; exit 1; }
+            grep -qx "CONFIG_SWARM_RADIO_FREQ_KHZ=${{ matrix.expect }}" build/sdkconfig \
+              || { echo "::error::wrong radio profile in build/sdkconfig"; exit 1; }
+            (cd build && esptool.py --chip ${{ matrix.target }} merge_bin -o merged-flash.bin @flash_args)
+          else
+            test "${{ matrix.expect }}" = FAIL
+          fi
+      - name: Upload the flashable image
+        if: matrix.expect != 'FAIL'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.app }}-${{ matrix.target }}-${{ matrix.band }}
+          path: |
+            tbeam/apps/${{ matrix.app }}/build/merged-flash.bin
+            tbeam/apps/${{ matrix.app }}/build/sdkconfig
