@@ -84,14 +84,22 @@ static void render_status(void) {
     sensor_bundle_t b;
     swarm_env_overlay_t env;
     swarm_state_peek(&b, &env);
-    char pm[8] = "--", co2[8] = "--";
-    if (b.flags & SWARM_FLAG_PMS7003_VALID) snprintf(pm, sizeof(pm), "%u.%u", b.pm25_raw / 10, b.pm25_raw % 10);
-    if (b.flags & SWARM_FLAG_SCD30_VALID) snprintf(co2, sizeof(co2), "%u", b.co2_raw);
-    swarm_display_row(5, "PM2.5 %s  CO2 %s", pm, co2);
-    if (b.flags & SWARM_FLAG_ENV_VALID) {
-        swarm_display_row(6, "T %.1fC  RH %.0f%%", env.temp_c, env.humidity_pct);
+    if (!(b.flags & (SWARM_FLAG_PMS7003_VALID | SWARM_FLAG_SCD30_VALID | SWARM_FLAG_ENV_VALID))) {
+        /* Nothing attached (or nothing fresh): say so rather than show a row
+         * of dashes that reads like a fault. Frames still go out, with every
+         * sensor VALID flag clear. */
+        swarm_display_row(5, "no sensor kit");
+        swarm_display_row(6, "frames: sensors clear");
     } else {
-        swarm_display_row(6, "T/RH --  (no BME688)");
+        char pm[8] = "--", co2[8] = "--";
+        if (b.flags & SWARM_FLAG_PMS7003_VALID) snprintf(pm, sizeof(pm), "%u.%u", b.pm25_raw / 10, b.pm25_raw % 10);
+        if (b.flags & SWARM_FLAG_SCD30_VALID) snprintf(co2, sizeof(co2), "%u", b.co2_raw);
+        swarm_display_row(5, "PM2.5 %s  CO2 %s", pm, co2);
+        if (b.flags & SWARM_FLAG_ENV_VALID) {
+            swarm_display_row(6, "T %.1fC  RH %.0f%%", env.temp_c, env.humidity_pct);
+        } else {
+            swarm_display_row(6, "T/RH --  (no BME688)");
+        }
     }
 
     swarm_pmu_info_t pmu;
