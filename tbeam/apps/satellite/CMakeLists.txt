@@ -9,5 +9,6 @@ set(EXTRA_COMPONENT_DIRS
     "${CMAKE_CURRENT_LIST_DIR}/../../third_party/XPowersLib"
 )
 
+include(${CMAKE_CURRENT_LIST_DIR}/../../cmake/band_guard.cmake)
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(swarm_satellite)

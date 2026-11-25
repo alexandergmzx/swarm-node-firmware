@@ -22,7 +22,7 @@ static const char *TAG = "lora_radio";
 // Kconfig (433-LAB or 915-MX); an esp32s3 build without a band overlay stops
 // here, because firmware cannot tell a 433 MHz Supreme from a 915 MHz one.
 #if CONFIG_SWARM_RADIO_PROFILE_UNSET
-#error "No radio profile: add ../../profiles/band-433.defaults or ../../profiles/band-915.defaults to SDKCONFIG_DEFAULTS"
+#error "No radio profile: delete this build directory's sdkconfig, then add ../../profiles/band-433.defaults or band-915.defaults to SDKCONFIG_DEFAULTS"
 #elif CONFIG_SWARM_RADIO_PROFILE_915 && CONFIG_IDF_TARGET_ESP32
 #error "915-MX profile on esp32: the classic T-Beam's SX1278 stops at 525 MHz"
 #endif
