@@ -13,9 +13,11 @@
  * radio probe before that step would always report "no radio".
  */
 
+#include <stdarg.h>
 #include <stdio.h>
 
 #include "board_pins.h"
+#include "display.h"
 #include "driver/gpio.h"
 #include "driver/i2c_master.h"
 #include "driver/uart.h"
@@ -33,6 +35,23 @@ static const char *TAG = "board_probe";
 #define I2C_XFER_TIMEOUT_MS 200
 
 static volatile uint32_t s_pps_edges = 0;
+
+/* The probe's results on the OLED, one row per step, redrawn as each step
+ * finishes (CONFIG_SWARM_DISPLAY): the board shows its own verdict without a
+ * laptop. Row 0 is the title bar. */
+static char s_screen[SWARM_DISPLAY_ROWS][SWARM_DISPLAY_COLS + 1];
+
+static void screen(int row, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
+static void screen(int row, const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(s_screen[row], sizeof(s_screen[row]), fmt, ap);
+    va_end(ap);
+    if (!swarm_display_present()) return;
+    swarm_display_clear();
+    for (int r = 0; r < SWARM_DISPLAY_ROWS; r++) swarm_display_row(r, "%s", s_screen[r]);
+    swarm_display_flush();
+}
 
 static void IRAM_ATTR pps_isr(void *arg) {
     (void)arg;
@@ -61,6 +80,7 @@ static void bring_up_pmu(i2c_master_bus_handle_t bus) {
     swarm_pmu_info_t info = {0};
     esp_err_t err = swarm_pmu_init(bus, &info);
     if (err != ESP_OK) {
+        screen(1, "PMU FAILED");
         printf("  PMU init FAILED (%s): nothing answered at 0x%02x as an AXP2101 — the radio and GNSS\n"
                "  rails are NOT enabled; every result below is expected to fail\n",
                esp_err_to_name(err), SWARM_I2C_ADDR_PMU);
@@ -74,6 +94,7 @@ static void bring_up_pmu(i2c_master_bus_handle_t bus) {
 #else
     printf("  rails enabled: ALDO3 (radio) + ALDO4 (GNSS) at 3.3 V\n");
 #endif
+    screen(1, "PMU %s %.2fV", info.chip_id == 0x4A ? "AXP2101 ok" : "unknown", info.vbus_mv / 1000.0);
     printf("  battery %u mV (%s%s), vbus %u mV (%s), sys %u mV\n",
            info.batt_mv, info.battery_present ? "cell fitted" : "no cell",
            info.charging ? ", charging" : "", info.vbus_mv,
@@ -82,6 +103,8 @@ static void bring_up_pmu(i2c_master_bus_handle_t bus) {
 
 static void scan_i2c(i2c_master_bus_handle_t bus) {
     printf("--- I2C scan (SDA=%d SCL=%d) ---\n", SWARM_PIN_I2C_SDA, SWARM_PIN_I2C_SCL);
+    int acks = 0;
+    bool kit = false;
     for (uint16_t addr = 0x03; addr <= 0x77; addr++) {
         if (i2c_master_probe(bus, addr, I2C_XFER_TIMEOUT_MS) == ESP_OK) {
             const char *known = "";
@@ -96,8 +119,11 @@ static void scan_i2c(i2c_master_bus_handle_t bus) {
             else if (addr == SWARM_I2C_ADDR_SCD30) known = " (SCD30)";
             else if (addr == SWARM_I2C_ADDR_BME688) known = " (BME688)";
             printf("  0x%02x ACKed%s\n", addr, known);
+            acks++;
+            if (addr == SWARM_I2C_ADDR_SCD30 || addr == SWARM_I2C_ADDR_BME688) kit = true;
         }
     }
+    screen(2, "I2C %d devices%s", acks, kit ? " +kit" : "");
 #if CONFIG_IDF_TARGET_ESP32
     printf("  expected on a classic without the kit wired: 0x%02x, 0x%02x; with the kit: + 0x%02x, 0x%02x\n",
            SWARM_I2C_ADDR_PMU, SWARM_I2C_ADDR_OLED, SWARM_I2C_ADDR_SCD30, SWARM_I2C_ADDR_BME688);
@@ -118,6 +144,7 @@ static void probe_radio(void) {
     esp_err_t err = lora_radio_init(&chip);
     if (err == ESP_OK) {
         printf("  found: %s\n", chip == LORA_CHIP_SX1278 ? "SX1278" : "SX1262");
+        screen(3, "radio %s ok", chip == LORA_CHIP_SX1278 ? "SX1278" : "SX1262");
 #if CONFIG_IDF_TARGET_ESP32
         if (chip == LORA_CHIP_SX1278) {
             printf("  (matches the HPDTek HPD14A on the purchase record; RST=%d confirmed)\n", SWARM_PIN_LORA_RST);
@@ -126,6 +153,7 @@ static void probe_radio(void) {
         }
 #endif
     } else {
+        screen(3, "NO RADIO");
         printf("  no radio responded (%s) — with the rails on and RST=%d this contradicts the vendor\n"
                "  schematic: check the PMU section above first, then SPI wiring\n",
                esp_err_to_name(err), SWARM_PIN_LORA_RST);
@@ -193,6 +221,7 @@ static void echo_nmea_and_count_pps(void) {
         }
     }
     printf("  %d NMEA line(s) seen in 10 s", lines_seen);
+    screen(4, "NMEA %d/10s PPS %u", lines_seen, (unsigned)s_pps_edges);
     if (swarm_board_has_pps()) {
         printf("; %u PPS edge(s)\n", (unsigned)s_pps_edges);
     } else {
@@ -242,6 +271,7 @@ __attribute__((unused)) static void link_test_tx(void) {
         int64_t t0 = esp_timer_get_time();
         esp_err_t err = lora_radio_tx(frame, sizeof(frame));
         int64_t airtime_us = esp_timer_get_time() - t0;
+        screen(5, "link TX %u/%d %s", seq, LINK_TEST_FRAMES, err == ESP_OK ? "ok" : "ERR");
         printf("  TX seq %u: %s (%lld ms on air)\n", seq, err == ESP_OK ? "ok" : esp_err_to_name(err),
                (long long)(airtime_us / 1000));
         vTaskDelay(pdMS_TO_TICKS(1000));
@@ -258,6 +288,12 @@ void app_main(void) {
     i2c_master_bus_handle_t bus = open_sensor_bus();
     if (bus != NULL) {
         bring_up_pmu(bus);   // on the classic the PMU shares this bus; on the S3 pmu opens its own
+        // The panel sits on this bus; on the S3 its rail (ALDO1) came up in
+        // bring_up_pmu(). Row 1 (the PMU verdict) is already in s_screen.
+        if (swarm_display_init(bus) == ESP_OK) {
+            printf("  OLED found: the probe's verdicts follow on the screen\n");
+        }
+        screen(0, "PROBE %s", lora_radio_profile()->name);
         scan_i2c(bus);
     } else {
         bring_up_pmu(NULL);
@@ -266,8 +302,11 @@ void app_main(void) {
     echo_nmea_and_count_pps();
 #if CONFIG_BOARD_PROBE_LINK_TEST
     link_test_tx();
+    screen(6, "done");
 #else
     printf("--- LoRa link test: off in this build (CONFIG_BOARD_PROBE_LINK_TEST=n) — nothing was transmitted ---\n");
+    screen(5, "link test off (no TX)");
+    screen(6, "done");
 #endif
     printf("\n=== done — copy these lines into hardware/bringup-log.md ===\n");
 

@@ -1,6 +1,6 @@
 idf_component_register(
     SRCS "app_main.c"
     INCLUDE_DIRS "."
-    REQUIRES radio board pmu driver
+    REQUIRES radio board pmu driver display
     PRIV_REQUIRES esp_timer
 )
