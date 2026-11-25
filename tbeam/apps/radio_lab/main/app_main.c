@@ -114,6 +114,9 @@ static struct {
     int last_rssi, last_snr_q4;        /* last frame we received */
     int fwd_rssi, fwd_snr_q4;          /* PONG's report of our PING */
     bool have_fwd;
+    int peer_rssi, peer_snr_q4;        /* the matched PONG (PING mode) or PING (PONG mode) */
+    int64_t peer_us;                   /* when it arrived, 0 = never */
+    bool mismatch;                     /* the peer reports another preset or power */
     double dist_m;                     /* -1 = unknown */
     uint8_t last_len;
     uint8_t last_bytes[8];
@@ -156,8 +159,10 @@ static esp_err_t tx_within_ceiling(const void *buf, size_t len) {
 }
 
 static void wait_for_ceiling(void) {
-    int64_t now = esp_timer_get_time();
-    if (s_next_tx_us > now) vTaskDelay(pdMS_TO_TICKS((s_next_tx_us - now) / 1000 + 1));
+    int64_t d;
+    while ((d = s_next_tx_us - esp_timer_get_time()) > 0) {
+        vTaskDelay(pdMS_TO_TICKS(d / 1000 + 1)); /* vTaskDelay may end up to a tick early: loop */
+    }
 }
 
 /* ---- helpers ---- */
@@ -247,12 +252,14 @@ static void apply_if_needed(void) {
     portENTER_CRITICAL(&s_lock);
     S.tx_allowed = band_tx_ok(&p);
     S.period_ms = period;
-    if (mode != s_applied_mode) {
-        S.sent = S.back = S.heard = S.replied = S.skipped_duty = S.rx_any = S.bursts_sent = 0;
-        S.have_fwd = false;
-        S.dist_m = -1;
-        S.sweep_done = 0;
-    }
+    /* Every applied change starts fresh counters, so the screen's loss is
+     * always for the current preset and settings. */
+    S.sent = S.back = S.heard = S.replied = S.skipped_duty = S.rx_any = S.bursts_sent = 0;
+    S.have_fwd = false;
+    S.mismatch = false;
+    S.peer_us = 0;
+    S.dist_m = -1;
+    S.sweep_done = 0;
     portEXIT_CRITICAL(&s_lock);
     s_applied = p;
     s_applied_mode = mode;
@@ -262,9 +269,11 @@ static void apply_if_needed(void) {
     lora_radio_rx_start();
 }
 
+/* LISTEN only: in PING/PONG a burst would take the slot the ping or pong
+ * needs under the airtime ceiling. */
 static void send_burst_if_any(int preset) {
     portENTER_CRITICAL(&s_lock);
-    bool go = S.burst_left > 0 && S.tx_allowed;
+    bool go = S.burst_left > 0 && S.tx_allowed && S.mode == MODE_LISTEN;
     portEXIT_CRITICAL(&s_lock);
     if (!go) return;
     static uint16_t seq;
@@ -282,87 +291,107 @@ static void send_burst_if_any(int preset) {
     lora_radio_rx_start();
 }
 
-static void do_ping(void) {
-    static uint16_t seq;
-    uint8_t buf[64];
+/* Poll until deadline_us whatever rx_poll returns (a CRC error or an
+ * oversize frame must not end a window early); hand each good packet to fn.
+ * Returns early only when fn returns true. */
+static bool poll_until(int64_t deadline_us, bool (*fn)(const uint8_t *, size_t, float, float)) {
+    uint8_t buf[256];
     size_t n;
     float rssi, snr;
+    int64_t left;
+    while ((left = deadline_us - esp_timer_get_time()) > 0) {
+        uint32_t ms = (uint32_t)(left / 1000) + 1;
+        if (lora_radio_rx_poll(buf, sizeof(buf), &n, &rssi, &snr, ms > 200 ? 200 : ms) == ESP_OK) {
+            note_rx(buf, n, rssi, snr);
+            if (fn && fn(buf, n, rssi, snr)) return true;
+        }
+    }
+    return false;
+}
+
+static bool print_other(const uint8_t *buf, size_t n, float rssi, float snr) {
+    print_rx_line("RX", buf, n, rssi, snr);
+    return false;
+}
+
+static uint16_t s_ping_seq;
+
+static bool match_pong(const uint8_t *buf, size_t n, float rssi, float snr) {
+    lab_frame_t r;
+    if (!parse_frame(buf, n, &r) || r.type != FT_PONG || r.seq != s_ping_seq) {
+        print_rx_line("RX", buf, n, rssi, snr);
+        return false;
+    }
+    bool mine;
+    int32_t lat, lon;
+    my_position(&mine, &lat, &lon);
+    double d = (mine && (r.flags & 1)) ? haversine_m(lat, lon, r.lat_1e7, r.lon_1e7) : -1;
+    portENTER_CRITICAL(&s_lock);
+    int preset = S.preset;
+    bool mismatch = r.preset != (preset < 0 ? 0xFF : (uint8_t)preset) || r.tx_dbm != s_applied.tx_dbm;
+    S.back++;
+    S.fwd_rssi = r.rssi_fwd;
+    S.fwd_snr_q4 = r.snr_fwd_q4;
+    S.have_fwd = true;
+    S.peer_rssi = (int)lrintf(rssi);
+    S.peer_snr_q4 = (int)lrintf(snr * 4);
+    S.peer_us = esp_timer_get_time();
+    S.mismatch = mismatch;
+    S.dist_m = d;
+    uint32_t sent = S.sent, back = S.back;
+    portEXIT_CRITICAL(&s_lock);
+    printf("PP,%lld,%u,%d,%u,%d,%s,%d,%.2f,%.1f,%.2f,%.1f,%ld,%ld,%ld,%ld,%lu,%lu,%u,%d\n",
+           (long long)(esp_timer_get_time() / 1000), s_ping_seq, preset, s_applied.sf, s_applied.tx_dbm,
+           mismatch ? "mismatch" : "ok", r.rssi_fwd, r.snr_fwd_q4 / 4.0, rssi, snr, d, (long)lat, (long)lon,
+           (long)r.lat_1e7, (long)r.lon_1e7, (unsigned long)sent, (unsigned long)back, r.preset, r.tx_dbm);
+    return true;
+}
+
+/* One PING cycle, anchored on the ping's own transmit time: ping, reply
+ * window measured from the end of the ping, then listen out the rest of
+ * the period. The period is the ceiling floor plus 50 ms from one ping
+ * start to the next, so the walker's own ceiling (same airtime) is always
+ * clear when the next ping arrives. */
+static void do_ping(void) {
     portENTER_CRITICAL(&s_lock);
     bool allowed = S.tx_allowed;
     int preset = S.preset;
     uint32_t period = S.period_ms;
     portEXIT_CRITICAL(&s_lock);
-    int64_t cycle_start = esp_timer_get_time();
-    if (allowed) {
-        wait_for_ceiling();
-        lab_frame_t f;
-        fill_frame(&f, FT_PING, ++seq, preset, s_applied.tx_dbm);
-        if (tx_within_ceiling(&f, sizeof(f)) == ESP_OK) {
-            portENTER_CRITICAL(&s_lock);
-            S.sent++;
-            portEXIT_CRITICAL(&s_lock);
-        }
-        lora_radio_rx_start();
+    if (!allowed) {
+        poll_until(esp_timer_get_time() + 500000, print_other); /* RX ONLY: just listen */
+        return;
     }
-    /* Reply window: the PONG's airtime plus generous turnaround. */
+    wait_for_ceiling();
+    int64_t start = esp_timer_get_time();
+    lab_frame_t f;
+    fill_frame(&f, FT_PING, (uint16_t)(s_ping_seq + 1), preset, s_applied.tx_dbm);
+    esp_err_t e = tx_within_ceiling(&f, sizeof(f));
+    lora_radio_rx_start();
+    if (e != ESP_OK) {
+        printf("ERR,ping not sent (%s)\n", esp_err_to_name(e));
+        poll_until(start + 200000, print_other);
+        return;
+    }
+    s_ping_seq++;
+    portENTER_CRITICAL(&s_lock);
+    S.sent++;
+    portEXIT_CRITICAL(&s_lock);
+    int64_t tx_end = esp_timer_get_time();
     uint32_t window_ms = 2 * lora_radio_time_on_air_us(sizeof(lab_frame_t)) / 1000 + 400;
-    bool got = false;
-    while ((esp_timer_get_time() - cycle_start) / 1000 < (int64_t)period) {
-        if (lora_radio_rx_poll(buf, sizeof(buf), &n, &rssi, &snr, 100) != ESP_OK) {
-            if (!got && (esp_timer_get_time() - cycle_start) / 1000 > window_ms) break;
-            continue;
-        }
-        note_rx(buf, n, rssi, snr);
-        lab_frame_t r;
-        if (allowed && !got && parse_frame(buf, n, &r) && r.type == FT_PONG && r.seq == seq) {
-            got = true;
-            bool mine;
-            int32_t lat, lon;
-            my_position(&mine, &lat, &lon);
-            double d = (mine && (r.flags & 1)) ? haversine_m(lat, lon, r.lat_1e7, r.lon_1e7) : -1;
-            portENTER_CRITICAL(&s_lock);
-            S.back++;
-            S.fwd_rssi = r.rssi_fwd;
-            S.fwd_snr_q4 = r.snr_fwd_q4;
-            S.have_fwd = true;
-            S.dist_m = d;
-            uint32_t sent = S.sent, back = S.back;
-            portEXIT_CRITICAL(&s_lock);
-            printf("PP,%lld,%u,%d,%u,%d,ok,%d,%.2f,%.1f,%.2f,%.1f,%ld,%ld,%ld,%ld,%lu,%lu\n",
-                   (long long)(esp_timer_get_time() / 1000), seq, preset, s_applied.sf, s_applied.tx_dbm,
-                   r.rssi_fwd, r.snr_fwd_q4 / 4.0, rssi, snr, d, (long)lat, (long)lon, (long)r.lat_1e7,
-                   (long)r.lon_1e7, (unsigned long)sent, (unsigned long)back);
-        } else {
-            print_rx_line("RX", buf, n, rssi, snr);
-        }
-    }
-    if (allowed && !got) {
-        printf("PP,%lld,%u,%d,%u,%d,lost\n", (long long)(esp_timer_get_time() / 1000), seq, preset,
+    bool got = poll_until(tx_end + (int64_t)window_ms * 1000, match_pong);
+    if (!got) {
+        printf("PP,%lld,%u,%d,%u,%d,lost\n", (long long)(esp_timer_get_time() / 1000), s_ping_seq, preset,
                s_applied.sf, s_applied.tx_dbm);
     }
-    send_burst_if_any(preset);
-    /* Hold the cycle to the period so the ceiling, not the loop, sets the pace. */
-    int64_t left_ms = (int64_t)period - (esp_timer_get_time() - cycle_start) / 1000;
-    if (left_ms > 0) {
-        while (left_ms > 0 && lora_radio_rx_poll(buf, sizeof(buf), &n, &rssi, &snr, (uint32_t)left_ms) == ESP_OK) {
-            note_rx(buf, n, rssi, snr);
-            print_rx_line("RX", buf, n, rssi, snr);
-            left_ms = (int64_t)period - (esp_timer_get_time() - cycle_start) / 1000;
-        }
-    }
+    poll_until(start + (int64_t)period * 1000, print_other);
 }
 
 static void do_pong(void) {
-    uint8_t buf[64];
+    uint8_t buf[256];
     size_t n;
     float rssi, snr;
-    if (lora_radio_rx_poll(buf, sizeof(buf), &n, &rssi, &snr, 200) != ESP_OK) {
-        portENTER_CRITICAL(&s_lock);
-        int preset = S.preset;
-        portEXIT_CRITICAL(&s_lock);
-        send_burst_if_any(preset);
-        return;
-    }
+    if (lora_radio_rx_poll(buf, sizeof(buf), &n, &rssi, &snr, 200) != ESP_OK) return;
     note_rx(buf, n, rssi, snr);
     lab_frame_t r;
     if (!parse_frame(buf, n, &r) || r.type != FT_PING) {
@@ -374,17 +403,23 @@ static void do_pong(void) {
     my_position(&mine, &lat, &lon);
     double d = (mine && (r.flags & 1)) ? haversine_m(lat, lon, r.lat_1e7, r.lon_1e7) : -1;
     portENTER_CRITICAL(&s_lock);
+    int preset = S.preset;
+    bool mismatch = r.preset != (preset < 0 ? 0xFF : (uint8_t)preset) || r.tx_dbm != s_applied.tx_dbm;
     S.heard++;
     S.dist_m = d;
+    S.peer_rssi = (int)lrintf(rssi);
+    S.peer_snr_q4 = (int)lrintf(snr * 4);
+    S.peer_us = esp_timer_get_time();
+    S.mismatch = mismatch;
     bool allowed = S.tx_allowed;
-    int preset = S.preset;
     portEXIT_CRITICAL(&s_lock);
     const char *what = "heard";
     if (allowed) {
         lab_frame_t f;
         fill_frame(&f, FT_PONG, r.seq, preset, s_applied.tx_dbm);
         f.rssi_fwd = (int8_t)lrintf(rssi < -128 ? -128 : rssi);
-        f.snr_fwd_q4 = (int8_t)lrintf(snr * 4 < -128 ? -128 : snr * 4 > 127 ? 127 : snr * 4);
+        float q = snr * 4;
+        f.snr_fwd_q4 = (int8_t)lrintf(q < -128 ? -128 : q > 127 ? 127 : q);
         vTaskDelay(pdMS_TO_TICKS(10)); /* let the pinger switch to RX */
         esp_err_t e = tx_within_ceiling(&f, sizeof(f));
         portENTER_CRITICAL(&s_lock);
@@ -394,8 +429,9 @@ static void do_pong(void) {
         what = e == ESP_OK ? "replied" : e == ESP_ERR_INVALID_STATE ? "skipped_ceiling" : "tx_error";
         lora_radio_rx_start();
     }
-    printf("PO,%lld,%u,%u,%d,%.1f,%.2f,%s,%.1f,%ld,%ld,%ld,%ld\n", (long long)(esp_timer_get_time() / 1000),
-           r.seq, r.preset, r.tx_dbm, rssi, snr, what, d, (long)lat, (long)lon, (long)r.lat_1e7, (long)r.lon_1e7);
+    printf("PO,%lld,%u,%u,%d,%.1f,%.2f,%s,%.1f,%ld,%ld,%ld,%ld,%s\n", (long long)(esp_timer_get_time() / 1000),
+           r.seq, r.preset, r.tx_dbm, rssi, snr, what, d, (long)lat, (long)lon, (long)r.lat_1e7, (long)r.lon_1e7,
+           mismatch ? "mismatch" : "match");
 }
 
 static void do_listen(void) {
@@ -439,7 +475,7 @@ static void do_sweep(void) {
                mean, peak);
         portENTER_CRITICAL(&s_lock);
         S.sweep_dbm[ch] = peak;
-        S.sweep_done = ch + 1;
+        if (ch + 1 > S.sweep_done) S.sweep_done = ch + 1; /* keep the last full pass on screen */
         portEXIT_CRITICAL(&s_lock);
     }
     /* back to the configured channel before the next pass or mode */
@@ -464,6 +500,7 @@ static void radio_task(void *arg) {
 /* ---- controls (Core 1) ---- */
 static void set_mode(lab_mode_t m) {
     portENTER_CRITICAL(&s_lock);
+    if (S.mode != m) S.burst_left = 0; /* pending bursts belong to the mode they were asked in */
     S.mode = m;
     portEXIT_CRITICAL(&s_lock);
 }
@@ -514,7 +551,7 @@ static void print_help(void) {
     for (int i = 0; i < N_PRESETS; i++) printf(" %d=SF%u/%+d", i, k_presets[i].sf, k_presets[i].dbm);
     printf(")\n"
            "  set freq <MHz> | bw <kHz> | sf <5-12> | cr <5-8> | sync <hex> | pwr <dBm>\n"
-           "  tx <N>       send N tagged burst frames, paced to the airtime ceiling\n"
+           "  tx <N>       (LISTEN mode) send N tagged burst frames, paced to the airtime ceiling\n"
            "  status | help\n"
            "Output lines (CSV): CFG, PP (ping result), PO (pong), RX (any packet), SW (sweep), BURST\n");
 }
@@ -550,8 +587,10 @@ static void handle_line(char *line) {
         if (i >= 0 && i < N_PRESETS) { set_preset(i); return; }
     } else if (!strcmp(cmd, "tx") && a) {
         portENTER_CRITICAL(&s_lock);
-        S.burst_left = (uint32_t)atoi(a);
+        bool listen = S.mode == MODE_LISTEN;
+        if (listen) S.burst_left = (uint32_t)atoi(a);
         portEXIT_CRITICAL(&s_lock);
+        if (!listen) printf("ERR,tx bursts run in LISTEN mode only (mode listen first)\n");
         return;
     } else if (!strcmp(cmd, "set") && a && b) {
         portENTER_CRITICAL(&s_lock);
@@ -616,14 +655,16 @@ static void render(void) {
     if (c.dist_m >= 0) snprintf(dist, sizeof(dist), "dist %.0f m", c.dist_m);
     else snprintf(dist, sizeof(dist), "dist: %s", fix ? "peer has no fix" : "no GPS fix");
     long age = c.last_rx_us > 0 ? (long)((esp_timer_get_time() - c.last_rx_us) / 1000000) : -1;
+    long peer_age = c.peer_us > 0 ? (long)((esp_timer_get_time() - c.peer_us) / 1000000) : -1;
     switch (c.mode) {
     case MODE_PING: {
         uint32_t lost = c.sent > c.back ? c.sent - c.back : 0;
         swarm_display_row(2, "sent %lu back %lu", (unsigned long)c.sent, (unsigned long)c.back);
-        swarm_display_row(3, "loss %lu%%", c.sent ? (unsigned long)(100 * lost / c.sent) : 0UL);
-        if (c.have_fwd) swarm_display_row(4, "fwd %ddBm %.1fdB", c.fwd_rssi, c.fwd_snr_q4 / 4.0);
+        swarm_display_row(3, "loss %lu%%%s", c.sent ? (unsigned long)(100 * lost / c.sent) : 0UL,
+                          c.mismatch ? "  PRESET?" : "");
+        if (c.have_fwd) swarm_display_row(4, "fwd %ddBm %.1fdB %lds", c.fwd_rssi, c.fwd_snr_q4 / 4.0, peer_age);
         else swarm_display_row(4, "fwd --");
-        if (c.back) swarm_display_row(5, "bck %ddBm %.1fdB %lds", c.last_rssi, c.last_snr_q4 / 4.0, age);
+        if (c.back) swarm_display_row(5, "bck %ddBm %.1fdB", c.peer_rssi, c.peer_snr_q4 / 4.0);
         else swarm_display_row(5, "bck --");
         swarm_display_row(6, "%s", dist);
         swarm_display_row(7, "every %.1fs air<=%.0f%%", c.period_ms / 1000.0, DUTY_PERMILLE / 10.0);
@@ -632,8 +673,9 @@ static void render(void) {
     case MODE_PONG:
         swarm_display_row(2, "heard %lu", (unsigned long)c.heard);
         swarm_display_row(3, "replied %lu skip %lu", (unsigned long)c.replied, (unsigned long)c.skipped_duty);
-        if (c.heard) swarm_display_row(4, "rx %ddBm %.1fdB %lds", c.last_rssi, c.last_snr_q4 / 4.0, age);
+        if (c.heard) swarm_display_row(4, "rx %ddBm %.1fdB %lds", c.peer_rssi, c.peer_snr_q4 / 4.0, peer_age);
         else swarm_display_row(4, "waiting for PING");
+        if (c.mismatch) swarm_display_row(5, "PEER PRESET DIFFERS");
         swarm_display_row(6, "%s", dist);
         swarm_display_row(7, "%s", fix ? "GPS fix" : "GPS no fix");
         break;

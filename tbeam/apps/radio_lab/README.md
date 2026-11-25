@@ -25,7 +25,7 @@ that sends.
 |---|---|
 | BOOT, short press | next mode: LISTEN → PING → PONG → SWEEP → LISTEN |
 | BOOT, long press (≥ 0.8 s) | next preset (below) |
-| USB console | `help`, `status`, `mode <m>`, `preset <n>`, `set freq\|bw\|sf\|cr\|sync\|pwr <v>`, `tx <N>` |
+| USB console | `help`, `status`, `mode <m>`, `preset <n>`, `set freq\|bw\|sf\|cr\|sync\|pwr <v>`, `tx <N>` (LISTEN only) |
 
 **Presets.** All use the fleet channel: 916.700 MHz, 500 kHz, CR 4:5, sync `0x12`. **Both boards must show
 the same preset**, because a different SF means they cannot hear each other.
@@ -51,7 +51,9 @@ the Semtech formula, and the board prints the exact value in its `CFG` line.
    `no GPS fix`/`peer has no fix`, but loss and RSSI still count.
 4. Walk outwards and stop at each point for at least 20 pings. At P0–P2 that is about a minute. Read the
    base screen (`sent`, `back`, `loss`, `fwd`/`bck` RSSI and SNR, `dist`), or let the laptop log it.
-5. When the link drops, long-press both boards to the next preset, from P0 up to P4, and repeat.
+5. When the link drops, long-press both boards to the next preset, from P0 up to P4, and repeat. Every
+   preset or settings change starts fresh counters. If the two boards are on different presets or powers
+   the base shows `PRESET?` and the walker `PEER PRESET DIFFERS`.
 
 Screen in PING (base):
 
@@ -81,7 +83,7 @@ Set their radio to the **fleet channel** to hear our boards:
 | Header / CRC | explicit header, CRC on |
 | IQ | normal (not inverted) |
 
-- **They listen to us.** Put our board in LISTEN and send `tx 50`. It sends 50 tagged frames,
+- **They listen to us.** Put our board in LISTEN and send `tx 50` (bursts run in LISTEN only, so they never take a ping's or pong's airtime). It sends 50 tagged frames,
   18 bytes starting `53 4c 03` (`"SL"`, type 3) followed by a 16-bit little-endian sequence number, paced to the
   airtime ceiling. They count the frames they receive and note RSSI/SNR.
 - **We listen to them.** Put our board in LISTEN with their settings, for example `set freq 915.0`,
@@ -97,8 +99,8 @@ Set their radio to the **fleet channel** to hear our boards:
 | Prefix | Fields |
 |---|---|
 | `CFG` | mode, freq_khz, bw_khz, sf, cr, sync, tx_dbm, `toa_us=`, `period_ms=`, `tx=allowed\|BLOCKED` |
-| `PP` (base) | uptime_ms, seq, preset, sf, tx_dbm, `ok`, fwd_rssi, fwd_snr, bck_rssi, bck_snr, dist_m, lat, lon, peer_lat, peer_lon, sent, back — or uptime_ms, seq, preset, sf, tx_dbm, `lost` |
-| `PO` (walker) | uptime_ms, seq, peer_preset, peer_dbm, rssi, snr, `replied\|skipped_ceiling\|tx_error\|heard`, dist_m, lat, lon, peer_lat, peer_lon |
+| `PP` (base) | uptime_ms, seq, preset, sf, tx_dbm, `ok`\|`mismatch`, fwd_rssi, fwd_snr, bck_rssi, bck_snr, dist_m, lat, lon, peer_lat, peer_lon, sent, back, peer_preset, peer_dbm — or uptime_ms, seq, preset, sf, tx_dbm, `lost`. `mismatch` means the walker answered from another preset or power |
+| `PO` (walker) | uptime_ms, seq, peer_preset, peer_dbm, rssi, snr, `replied\|skipped_ceiling\|tx_error\|heard`, dist_m, lat, lon, peer_lat, peer_lon, `match\|mismatch` |
 | `RX` | uptime_ms, rssi, snr, length, hex (first 64 bytes) |
 | `SW` | uptime_ms, freq_khz, mean_dbm, peak_dbm |
 | `BURST` | uptime_ms, seq |
