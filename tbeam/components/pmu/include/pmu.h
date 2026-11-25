@@ -51,6 +51,10 @@ esp_err_t swarm_pmu_init(i2c_master_bus_handle_t shared_bus, swarm_pmu_info_t *o
 /** The bus the PMU is on once swarm_pmu_init() succeeded; NULL before. */
 i2c_master_bus_handle_t swarm_pmu_bus(void);
 
+/** Fresh battery/VBUS/system voltages (for the status screen); valid after
+ * swarm_pmu_init(). A few I2C reads, so call it from a Core 1 task. */
+esp_err_t swarm_pmu_read(swarm_pmu_info_t *out);
+
 #ifdef __cplusplus
 }
 #endif

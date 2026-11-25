@@ -11,6 +11,7 @@
 #include "XPowersLib.h"
 
 #include "board_pins.h"
+#include "sdkconfig.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -95,6 +96,15 @@ extern "C" esp_err_t swarm_pmu_init(i2c_master_bus_handle_t shared_bus, swarm_pm
   s_pmu.setALDO4Voltage(3300);
   s_pmu.enableALDO4();   // GNSS
   const char *rails = "ALDO3 (radio) + ALDO4 (GNSS)";
+#if CONFIG_SWARM_DISPLAY
+  // ALDO1 feeds the S3's onboard I2C parts on bus 0 (OLED, BME280,
+  // magnetometer). The vendor page warns the bus hangs if they are addressed
+  // unpowered, so the display build switches it on here, before any bus-0
+  // traffic, and the 50 ms wait below covers its start-up too.
+  s_pmu.setALDO1Voltage(3300);
+  s_pmu.enableALDO1();
+  rails = "ALDO3 (radio) + ALDO4 (GNSS) + ALDO1 (OLED)";
+#endif
 #endif
   // Let the radio and the GNSS module come out of power-on reset on the
   // fresh rail before anybody talks to them.
@@ -116,3 +126,9 @@ extern "C" esp_err_t swarm_pmu_init(i2c_master_bus_handle_t shared_bus, swarm_pm
 }
 
 extern "C" i2c_master_bus_handle_t swarm_pmu_bus(void) { return s_bus; }
+
+extern "C" esp_err_t swarm_pmu_read(swarm_pmu_info_t *out) {
+  if (!s_up || out == nullptr) return ESP_ERR_INVALID_STATE;
+  fill(out);
+  return ESP_OK;
+}
