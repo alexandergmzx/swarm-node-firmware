@@ -16,6 +16,14 @@ idf.py -B build-915 -p /dev/ttyACM<n> flash monitor
 
 A board fresh from the factory needs ROM download mode once: hold BOOT, tap RST, release BOOT.
 
+Without ESP-IDF: every CI run uploads a ready image (`radio_lab-esp32s3-915`, file `merged-flash.bin`).
+Flash it with esptool alone: `esptool --chip esp32s3 --port /dev/ttyACM<n> write-flash 0x0 merged-flash.bin`.
+Back up a factory image first if you want it back: `esptool --port <port> --before no-reset read-flash 0 ALL factory.bin`.
+
+The parent project's ground station has a web page for this app (its `#/lab` route): it shows the results
+live and sends these same console commands. It talks to the board through the ground station or straight
+from Chrome or Edge over USB.
+
 ## Controls
 
 The board boots in **LISTEN**, which never transmits. Fit a 915 MHz antenna before choosing a mode
