@@ -24,6 +24,7 @@ jobs:
           - { app: board_probe, target: esp32,   band: 433, defaults: "sdkconfig.defaults", expect: "433175" }
           - { app: board_probe, target: esp32s3, band: 433, defaults: "sdkconfig.defaults;../../profiles/band-433.defaults", expect: "433175" }
           - { app: board_probe, target: esp32s3, band: 915, defaults: "sdkconfig.defaults;../../profiles/band-915.defaults", expect: "916700" }
+          - { app: radio_lab,   target: esp32s3, band: 915, defaults: "sdkconfig.defaults;../../profiles/band-915.defaults", expect: "916700" }
           - { app: receiver,    target: esp32s3, band: none, defaults: "sdkconfig.defaults", expect: "FAIL" }
           - { app: receiver,    target: esp32,   band: 915, defaults: "sdkconfig.defaults;../../profiles/band-915.defaults", expect: "FAIL" }
     steps:

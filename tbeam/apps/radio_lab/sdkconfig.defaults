@@ -1,0 +1,7 @@
+CONFIG_FREERTOS_HZ=1000
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=10
+# esp32s3 only: console and commands on the native USB-Serial-JTAG port, 8 MB
+# flash. Add the band overlay: ../../profiles/band-915.defaults.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
