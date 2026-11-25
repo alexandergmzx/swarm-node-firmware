@@ -25,11 +25,16 @@ static const char *TAG = "tdma";
 
 // The clock-fallback transmission (start offset + worst clock error + time on
 // air of one RAW_SENSOR frame) must end inside its slot at the build's radio
-// profile (ADR 0016): 210 + 200 + 61.7 ms at 433-LAB, 210 + 200 + 51.5 ms at
+// profile (ADR 0016): 210 + 200 + 61.7 ms at 433-LAB, 210 + 200 + 28.3 ms at
 // 915-MX. SF9 at 125 kHz (205.8 ms) would fail here, not on the air.
 _Static_assert(FALLBACK_START_OFFSET_MS + FALLBACK_MAX_ERROR_MS +
                    (LORA_RADIO_AIRTIME_US(SWARM_RAW_SENSOR_SIZE) + 999u) / 1000u <= SLOT_MS,
                "clock-fallback TX overruns the TDMA slot at this radio profile (ADR 0016)");
+// One frame per superframe must stay inside the profile's airtime ceiling:
+// 0.57 % at 915-MX (ceiling 1 %), 1.23 % at 433-LAB (ceiling 10 %).
+_Static_assert((uint64_t)LORA_RADIO_AIRTIME_US(SWARM_RAW_SENSOR_SIZE) * 1000u <=
+                   (uint64_t)CONFIG_SWARM_RADIO_MAX_DUTY_PERMILLE * SUPERFRAME_MS * 1000u,
+               "one RAW_SENSOR frame per superframe exceeds the profile's airtime ceiling");
 
 static portMUX_TYPE s_stats_lock = portMUX_INITIALIZER_UNLOCKED;
 static swarm_tdma_stats_t s_stats = {.last_tx_us = -1};

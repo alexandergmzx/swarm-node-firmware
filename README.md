@@ -61,7 +61,7 @@ cannot be read by firmware:
 | Profile | Radio | Boards | TX power range |
 |---|---|---|---|
 | `433-LAB` | 433.175 MHz / 125 kHz / SF7 | classic T-Beam; 433 MHz S3 Supreme | 2–10 dBm (EU SRD: 10 mW e.r.p.) |
-| `915-MX` | 916.700 MHz / 500 kHz / SF9, one fixed channel | 915 MHz S3 Supreme | −9 to +22 dBm |
+| `915-MX` | 916.700 MHz / 500 kHz / SF8, one fixed channel, ≤ 1 % airtime per node | 915 MHz S3 Supreme | −9 to +22 dBm |
 
 Both use CR 4:5, explicit header, CRC, an 8-symbol preamble and sync word `0x12`. Every build
 defaults to +2 dBm. A classic defaults to `433-LAB`. An S3 build names its band with

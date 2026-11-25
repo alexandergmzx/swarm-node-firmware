@@ -9,7 +9,7 @@
  * Interop profile (every radio of one mesh must agree — ADR 0016, ADR 0029,
  * ADR 0031), chosen in Kconfig ("Swarm radio profile"):
  *   433-LAB  433.175 MHz / 125 kHz / SF7   26 B frame = 61.7 ms on air
- *   915-MX   916.700 MHz / 500 kHz / SF9   26 B frame = 51.5 ms on air
+ *   915-MX   916.700 MHz / 500 kHz / SF8   26 B frame = 28.3 ms on air
  * Both: CR 4:5 / explicit header / PHY CRC on / 8-symbol preamble / private
  * sync word 0x12 / TX power CONFIG_SWARM_TX_POWER_DBM (default +2 dBm).
  * RadioLib's SX1262 begin() takes the same 1-byte
@@ -52,9 +52,9 @@ typedef struct {
 /**
  * Time on air in microseconds of a len-byte packet at this build's profile:
  * CR 4:5, explicit header, PHY CRC on, 8-symbol preamble, no low-data-rate
- * optimisation (symbols are 1.024 ms at both profiles, under its 16 ms
+ * optimisation (symbols are 1.024 ms at 433-LAB and 0.512 ms at 915-MX, under its 16 ms
  * threshold). Semtech's formula: (8 + 4.25 + 8 + ceil((8L - 4SF + 44) / 4SF)
- * * 5) symbols. 26 B gives 61 696 us at 433-LAB and 51 456 us at 915-MX.
+ * * 5) symbols. 26 B gives 61 696 us at 433-LAB and 28 288 us at 915-MX.
  * A constant expression, so callers can _Static_assert on it.
  */
 #define LORA_RADIO_AIRTIME_US(len)                                                          \
@@ -74,7 +74,7 @@ typedef struct {
 esp_err_t lora_radio_init(lora_chip_t *out_chip);
 
 /** Blocking transmit — the satellite's whole TX budget is one TDMA slot
- * (LORA_RADIO_AIRTIME_US: 61.7 ms or 51.5 ms for a 26 B frame), so blocking
+ * (LORA_RADIO_AIRTIME_US: 61.7 ms or 28.3 ms for a 26 B frame), so blocking
  * here does not risk the slot arithmetic (ADR 0016). Returns once the packet
  * is fully on air. */
 esp_err_t lora_radio_tx(const uint8_t *data, size_t len);

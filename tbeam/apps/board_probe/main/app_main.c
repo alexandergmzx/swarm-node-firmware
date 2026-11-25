@@ -247,7 +247,9 @@ static void echo_nmea_and_count_pps(void) {
     }
 }
 
-/* Bench / range link test: sixty tagged frames, one per second, at the
+/* Bench / range link test: sixty tagged frames, paced to the profile's airtime
+ * ceiling (CONFIG_SWARM_RADIO_MAX_DUTY_PERMILLE: one frame per ~2.1 s at 915-MX's
+ * 1 %, one per second at 433-LAB's 10 %), at the
  * configured TX power (CONFIG_SWARM_TX_POWER_DBM, default +2 dBm; ADR 0031). The receiver prints each as
  * `RX <rssi> <snr> <hex>`; the hex starts with a5 5a 4c 4e 4b ("LNK") then
  * the sequence number and this chip's MAC tail, so the two consoles can be
@@ -256,10 +258,20 @@ static void echo_nmea_and_count_pps(void) {
  * M3 pass criterion (docs/validation/range-test.md). One minute per point.
  * Antennas must be fitted on both boards before this runs. */
 #define LINK_TEST_FRAMES 60
+#define LINK_TEST_FRAME_BYTES 12
+/* Period in ms so that one frame per period stays within the ceiling, never
+ * faster than one a second. */
+#define LINK_TEST_PERIOD_MS                                                                       \
+    ((LORA_RADIO_AIRTIME_US(LINK_TEST_FRAME_BYTES) * 1000u / CONFIG_SWARM_RADIO_MAX_DUTY_PERMILLE + \
+      999u) / 1000u > 1000u                                                                       \
+         ? (LORA_RADIO_AIRTIME_US(LINK_TEST_FRAME_BYTES) * 1000u / CONFIG_SWARM_RADIO_MAX_DUTY_PERMILLE + 999u) / 1000u \
+         : 1000u)
 
 __attribute__((unused)) static void link_test_tx(void) {
-    printf("--- LoRa link test: %d frames, 1/s, %+d dBm ---\n", LINK_TEST_FRAMES,
-           CONFIG_SWARM_TX_POWER_DBM);
+    printf("--- LoRa link test: %d frames, one per %u ms (%.2f %% airtime, ceiling %.1f %%), %+d dBm ---\n",
+           LINK_TEST_FRAMES, (unsigned)LINK_TEST_PERIOD_MS,
+           LORA_RADIO_AIRTIME_US(LINK_TEST_FRAME_BYTES) / 10.0 / LINK_TEST_PERIOD_MS,
+           CONFIG_SWARM_RADIO_MAX_DUTY_PERMILLE / 10.0, CONFIG_SWARM_TX_POWER_DBM);
     if (lora_radio_chip() == LORA_CHIP_UNKNOWN) {
         printf("  skipped: no radio\n");
         return;
@@ -267,14 +279,14 @@ __attribute__((unused)) static void link_test_tx(void) {
     uint8_t mac[6] = {0};
     esp_read_mac(mac, ESP_MAC_WIFI_STA);
     for (uint8_t seq = 1; seq <= LINK_TEST_FRAMES; seq++) {
-        uint8_t frame[12] = {0xA5, 0x5A, 'L', 'N', 'K', seq, mac[3], mac[4], mac[5], 0, 0, 0};
+        uint8_t frame[LINK_TEST_FRAME_BYTES] = {0xA5, 0x5A, 'L', 'N', 'K', seq, mac[3], mac[4], mac[5], 0, 0, 0};
         int64_t t0 = esp_timer_get_time();
         esp_err_t err = lora_radio_tx(frame, sizeof(frame));
         int64_t airtime_us = esp_timer_get_time() - t0;
         screen(5, "link TX %u/%d %s", seq, LINK_TEST_FRAMES, err == ESP_OK ? "ok" : "ERR");
         printf("  TX seq %u: %s (%lld ms on air)\n", seq, err == ESP_OK ? "ok" : esp_err_to_name(err),
                (long long)(airtime_us / 1000));
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        vTaskDelay(pdMS_TO_TICKS(LINK_TEST_PERIOD_MS));
     }
     printf("  link test done — compare with the receiver's RX lines\n");
 }
