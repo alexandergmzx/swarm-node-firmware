@@ -1,0 +1,35 @@
+name: firmware
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    name: ${{ matrix.app }} / ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    container: espressif/idf:v5.4.1
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { app: satellite, target: esp32 }
+          - { app: satellite, target: esp32s3 }
+          - { app: receiver, target: esp32s3 }
+          - { app: receiver, target: esp32 }
+          - { app: board_probe, target: esp32 }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch the vendored libraries
+        # The workspace is bind-mounted into the container under a different
+        # uid, so git refuses it ("dubious ownership") until it is trusted.
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git submodule update --init --depth 1
+      - name: Build
+        shell: bash
+        run: |
+          . $IDF_PATH/export.sh
+          cd tbeam/apps/${{ matrix.app }}
+          idf.py set-target ${{ matrix.target }}
+          idf.py build

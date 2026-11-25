@@ -1,0 +1,9 @@
+[submodule "tbeam/third_party/RadioLib"]
+	path = tbeam/third_party/RadioLib
+	url = https://github.com/jgromes/RadioLib.git
+[submodule "tbeam/third_party/XPowersLib"]
+	path = tbeam/third_party/XPowersLib
+	url = https://github.com/lewisxhe/XPowersLib.git
+[submodule "tbeam/third_party/BME68x_SensorAPI"]
+	path = tbeam/third_party/BME68x_SensorAPI
+	url = https://github.com/boschsensortec/BME68x_SensorAPI.git

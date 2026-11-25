@@ -1,0 +1,12 @@
+# ESP-IDF build output: one build directory per app, target or unit
+build/
+build-*/
+# Generated per build directory from sdkconfig.defaults*; the defaults are tracked
+sdkconfig
+sdkconfig.old
+dependencies.lock
+managed_components/
+# Editors
+.vscode/
+.idea/
+*.swp
